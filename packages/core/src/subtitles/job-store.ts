@@ -12,7 +12,7 @@
  * re-served (and later shared cross-instance, spec §4.7) after the job's own
  * TTL lapses.
  */
-import { Cache } from '../utils/index.js';
+import { Cache, appConfig } from '../utils/index.js';
 import { getSimpleTextHash } from '../utils/crypto.js';
 import type { SubtitleJob, SubtitleJobKey } from './types.js';
 
@@ -21,10 +21,14 @@ const JOB_TTL_SECONDS = 24 * 60 * 60;
 /** Finished SRTs live longer — they're the reusable artefact. */
 const RESULT_TTL_SECONDS = 7 * 24 * 60 * 60;
 
+// Persist job state so the FINISHED/not-ready slot state and the served SRT
+// survive a container restart (Redis when configured, otherwise SQL).
+const STORE: 'redis' | 'sql' = appConfig.bootstrap.redisUri ? 'redis' : 'sql';
+
 const jobCache = () =>
-  Cache.getInstance<string, SubtitleJob>('subtitle-jobs');
+  Cache.getInstance<string, SubtitleJob>('subtitle-jobs', undefined, STORE);
 const resultCache = () =>
-  Cache.getInstance<string, string>('subtitle-results');
+  Cache.getInstance<string, string>('subtitle-results', undefined, STORE);
 
 /** Deterministic id for a job tuple — stable across instances for §4.7 reuse. */
 export function jobId(key: SubtitleJobKey): string {

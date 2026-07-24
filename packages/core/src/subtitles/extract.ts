@@ -239,14 +239,27 @@ export async function extractBestSubtitle(
   url: string,
   preferredLangs: string[]
 ): Promise<{ srt: string; track: ProbedSubtitleTrack }> {
-  const tracks = await probeSubtitleTracks(url);
+  let tracks: ProbedSubtitleTrack[];
+  try {
+    tracks = await probeSubtitleTracks(url);
+  } catch (err) {
+    // ffprobe couldn't open the file at all — usually the release is
+    // unavailable/dead on the backbone rather than lacking subtitles.
+    throw new Error(
+      `Could not read the release to extract subtitles — it may be unavailable or dead on the backbone. (${
+        err instanceof Error ? err.message : String(err)
+      })`
+    );
+  }
   const picked = pickTrack(tracks, preferredLangs);
   if (!picked) {
     const bitmap = tracks.filter((t) => BITMAP_CODECS.has(t.codec));
     if (bitmap.length > 0) {
       throw new BitmapOnlySubtitleError(bitmap.map((t) => t.codec));
     }
-    throw new Error('No embedded text subtitle track found');
+    throw new Error(
+      'No embedded text subtitle track found — the release may have none, or its subtitle data may be missing on the backbone (e.g. a partially dead NZB).'
+    );
   }
   const srt = await extractTrackToSrt(url, picked);
   return { srt, track: picked };

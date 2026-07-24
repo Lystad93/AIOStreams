@@ -10,7 +10,7 @@
  * at. A miss (e.g. after a restart, or a release we don't own) simply means the
  * exact-extract slot isn't offered for that file; nothing speculative is done.
  */
-import { Cache } from '../utils/index.js';
+import { Cache, appConfig } from '../utils/index.js';
 import { getSimpleTextHash } from '../utils/crypto.js';
 import { PLAYBACK_PATH_PREFIX } from '../debrid/utils.js';
 import { createLogger } from '../logging/logger.js';
@@ -19,6 +19,15 @@ const logger = createLogger('subtitles');
 
 /** Matches the playback link validity; a playback session is short-lived. */
 const TTL_SECONDS = 24 * 60 * 60;
+
+/**
+ * Persist the release map so a "Translate Exact" slot survives a container
+ * restart and doesn't depend on the stream list being re-opened in the same
+ * session (Redis when configured, otherwise the shared SQL cache).
+ */
+const RELEASE_STORE: 'redis' | 'sql' = appConfig.bootstrap.redisUri
+  ? 'redis'
+  : 'sql';
 
 export interface ServedRelease {
   url: string;
@@ -33,7 +42,11 @@ interface StreamLike {
 }
 
 const cache = () =>
-  Cache.getInstance<string, ServedRelease>('subtitle-release-map');
+  Cache.getInstance<string, ServedRelease>(
+    'subtitle-release-map',
+    undefined,
+    RELEASE_STORE
+  );
 
 function key(
   uuid: string,

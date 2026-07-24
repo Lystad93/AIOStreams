@@ -51,7 +51,7 @@ export interface TranslationProvider {
 /** Cues per model call. Kept modest so one bad batch is cheap to retry. */
 const BATCH_SIZE = 80;
 
-const DEFAULT_GEMINI_MODEL = 'gemini-2.0-flash';
+const DEFAULT_GEMINI_MODEL = 'gemini-flash-lite-latest';
 
 /**
  * Google Gemini adapter. Uses the `generateContent` REST endpoint with a JSON

@@ -280,7 +280,7 @@ export function PlaybackBehavior() {
         <TextInput
           label="Model (optional)"
           disabled={!userData.subtitleTranslation?.enabled}
-          placeholder="gemini-2.0-flash"
+          placeholder="gemini-flash-lite-latest"
           help="Override the translation model. Leave blank for the provider default."
           value={userData.subtitleTranslation?.model ?? ''}
           onValueChange={(value) => {
