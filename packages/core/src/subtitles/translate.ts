@@ -77,7 +77,7 @@ export const geminiProvider: TranslationProvider = {
         ctx.sourceLang ? ` from ${ctx.sourceLang}` : ''
       } into ${ctx.targetLang}.`,
       `Preserve meaning, tone and register. Keep line breaks (\\n) inside a cue.`,
-      `Do NOT merge, split, renumber, add, or drop lines — return exactly ${lines.length} translations in the same order.`,
+      `Return one object per input line as {"i": <the line number>, "t": "<translation>"}, reusing the SAME line number. Do not merge, split, renumber, add, or drop lines.`,
       `Do not translate proper nouns that are normally left untranslated.`,
       glossaryLines
         ? `Use these agreed term translations for consistency:\n${glossaryLines}`
@@ -98,7 +98,17 @@ export const geminiProvider: TranslationProvider = {
         responseSchema: {
           type: 'object',
           properties: {
-            translations: { type: 'array', items: { type: 'string' } },
+            translations: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  i: { type: 'integer' },
+                  t: { type: 'string' },
+                },
+                required: ['i', 't'],
+              },
+            },
             glossary: {
               type: 'array',
               items: {
@@ -139,7 +149,7 @@ export const geminiProvider: TranslationProvider = {
     }
 
     let parsed: {
-      translations?: string[];
+      translations?: { i?: number; t?: string }[];
       glossary?: { term: string; translation: string }[];
     };
     try {
@@ -148,10 +158,17 @@ export const geminiProvider: TranslationProvider = {
       throw new Error('Gemini returned unparseable JSON');
     }
 
-    const translations = parsed.translations ?? [];
-    if (translations.length !== lines.length) {
-      throw new Error(
-        `Gemini returned ${translations.length} lines, expected ${lines.length}`
+    // Map translations back to their original index. Resilient to the model
+    // merging/dropping a line: any index it skips keeps the original text
+    // rather than failing (or misaligning) the whole subtitle.
+    const { lines: mapped, missing } = reassembleTranslations(
+      lines,
+      parsed.translations ?? []
+    );
+    if (missing > 0) {
+      logger.debug(
+        { returned: parsed.translations?.length ?? 0, expected: lines.length, missing },
+        'some subtitle lines were not translated; kept original text'
       );
     }
 
@@ -160,12 +177,37 @@ export const geminiProvider: TranslationProvider = {
       if (g?.term && g?.translation) glossary[g.term] = g.translation;
     }
 
-    return {
-      lines: translations.map((t) => t.replace(/\\n/g, '\n')),
-      glossary,
-    };
+    return { lines: mapped, glossary };
   },
 };
+
+/**
+ * Reassemble indexed translations onto the original lines. Missing indices keep
+ * the original text (graceful degradation); out-of-range/duplicate indices are
+ * ignored. Returns the count of lines left untranslated.
+ */
+export function reassembleTranslations(
+  originals: string[],
+  items: { i?: number; t?: string }[]
+): { lines: string[]; missing: number } {
+  const out = originals.slice();
+  const filled = new Array(originals.length).fill(false);
+  for (const item of items) {
+    const i = item?.i;
+    if (
+      typeof i === 'number' &&
+      Number.isInteger(i) &&
+      i >= 0 &&
+      i < out.length &&
+      typeof item.t === 'string'
+    ) {
+      out[i] = item.t.replace(/\\n/g, '\n');
+      filled[i] = true;
+    }
+  }
+  const missing = filled.filter((f) => !f).length;
+  return { lines: out, missing };
+}
 
 const PROVIDERS: Record<string, TranslationProvider> = {
   [geminiProvider.id]: geminiProvider,

@@ -5,6 +5,7 @@ import { encodeSubtitleToken, decodeSubtitleToken } from './token.js';
 import { releaseHash } from './release-lookup.js';
 import { estimateEtaSeconds } from './pipeline.js';
 import { pickTrack } from './extract.js';
+import { reassembleTranslations } from './translate.js';
 import type { ProbedSubtitleTrack } from './types.js';
 
 test('parseSrt: tolerates CRLF, multiline cues, and preserves timings', () => {
@@ -84,6 +85,31 @@ test('pickTrack: returns undefined when only bitmap tracks exist', () => {
     { index: 0, codec: 'dvd_subtitle', isText: false, language: 'eng' },
   ];
   assert.equal(pickTrack(tracks, ['English']), undefined);
+});
+
+test('reassembleTranslations: maps by index and keeps originals for skipped lines', () => {
+  const originals = ['one', 'two', 'three', 'four'];
+  // Model dropped index 2 and returned them out of order.
+  const items = [
+    { i: 1, t: 'to' },
+    { i: 0, t: 'en' },
+    { i: 3, t: 'fire' },
+  ];
+  const { lines, missing } = reassembleTranslations(originals, items);
+  assert.deepEqual(lines, ['en', 'to', 'three', 'fire']); // index 2 kept original
+  assert.equal(missing, 1);
+});
+
+test('reassembleTranslations: ignores out-of-range/garbage indices, unescapes \\n', () => {
+  const { lines, missing } = reassembleTranslations(['a', 'b'], [
+    { i: 0, t: 'x\\ny' },
+    { i: 9, t: 'ignored' },
+    { i: -1, t: 'ignored' },
+    { t: 'no index' } as any,
+  ]);
+  assert.equal(lines[0], 'x\ny');
+  assert.equal(lines[1], 'b'); // untouched
+  assert.equal(missing, 1);
 });
 
 test('estimateEtaSeconds: grows with file size, has a floor', () => {
