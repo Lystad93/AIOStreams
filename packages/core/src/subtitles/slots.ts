@@ -80,9 +80,18 @@ export async function buildSubtitleSlots(
   extras?: string
 ): Promise<Subtitle[]> {
   const cfg = resolveSubtitleConfig(userData);
-  if (!cfg) return [];
+  if (!cfg) {
+    logger.debug(
+      { id },
+      'subtitle slots: feature not configured (needs enable + apiKey + targetLanguage)'
+    );
+    return [];
+  }
   // Full-file extraction is the gated, download-heavy half (spec §7).
-  if (!appConfig.bootstrap.subtitleExtractionAllowed) return [];
+  if (!appConfig.bootstrap.subtitleExtractionAllowed) {
+    logger.debug({ id }, 'subtitle slots: extraction disabled on this instance');
+    return [];
+  }
   const uuid = userData.uuid;
   const encryptedPassword = userData.encryptedPassword;
   if (!uuid || !encryptedPassword) return [];
@@ -95,6 +104,15 @@ export async function buildSubtitleSlots(
     videoSize: parsed.videoSize,
     filename: parsed.filename,
   });
+  logger.debug(
+    {
+      id,
+      videoSize: parsed.videoSize,
+      filename: parsed.filename,
+      matched: !!served,
+    },
+    'subtitle slots: release lookup'
+  );
   if (!served) return [];
 
   const key: SubtitleJobKey = {

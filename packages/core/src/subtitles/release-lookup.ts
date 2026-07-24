@@ -13,6 +13,9 @@
 import { Cache } from '../utils/index.js';
 import { getSimpleTextHash } from '../utils/crypto.js';
 import { PLAYBACK_PATH_PREFIX } from '../debrid/utils.js';
+import { createLogger } from '../logging/logger.js';
+
+const logger = createLogger('subtitles');
 
 /** Matches the playback link validity; a playback session is short-lived. */
 const TTL_SECONDS = 24 * 60 * 60;
@@ -69,10 +72,12 @@ export async function recordServedReleases(
   contentId: string,
   streams: StreamLike[]
 ): Promise<void> {
+  let recorded = 0;
   await Promise.all(
     streams.map(async (s) => {
       if (!s.url || !s.url.includes(PLAYBACK_PATH_PREFIX)) return;
       if (s.size == null && !s.filename) return;
+      recorded++;
       const entry: ServedRelease = {
         url: s.url,
         size: s.size,
@@ -89,6 +94,10 @@ export async function recordServedReleases(
         [...keys].map((k) => cache().set(k, entry, TTL_SECONDS))
       );
     })
+  );
+  logger.debug(
+    { contentId, total: streams.length, recorded },
+    'recorded served releases for subtitles'
   );
 }
 

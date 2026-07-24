@@ -665,6 +665,33 @@ function emitAddonContributions(args: {
   }
 }
 
+/**
+ * Record the served releases so a later subtitle request can map the file the
+ * user plays back to its owned playback URL for extraction (spec §3.3/§4.2).
+ * Non-blocking; runs on both the fresh and cached stream paths so a pipeline
+ * cache hit doesn't leave the release unrecorded.
+ */
+function recordReleasesForSubtitles(
+  ctx: AIOStreamsContext,
+  id: string,
+  streams: ParsedStream[]
+): void {
+  if (!ctx.userData?.uuid || !ctx.userData.subtitleTranslation?.enabled) return;
+  const uuid = ctx.userData.uuid;
+  setImmediate(() => {
+    recordServedReleases(
+      uuid,
+      id,
+      streams.map((s) => ({ url: s.url, size: s.size, filename: s.filename }))
+    ).catch((error) => {
+      logger.debug(
+        { error: error instanceof Error ? error.message : String(error) },
+        'failed to record served releases for subtitles'
+      );
+    });
+  });
+}
+
 export async function getStreams(
   ctx: AIOStreamsContext,
   id: string,
@@ -707,6 +734,9 @@ export async function getStreams(
         context.getEpisodeRuntime(),
       ]);
       logger.debug({ type, id }, 'pipeline result cache hit');
+      if (cached.data?.streams) {
+        recordReleasesForSubtitles(ctx, id, cached.data.streams);
+      }
       return cached;
     }
   }
@@ -983,25 +1013,7 @@ export async function getStreams(
   // Remember the served releases so a later subtitle request can map the
   // file the user plays back to its owned playback URL for extraction (spec
   // §3.3/§4.2). Non-blocking; failures here must not affect the stream reply.
-  if (ctx.userData?.uuid && ctx.userData.subtitleTranslation?.enabled) {
-    const uuid = ctx.userData.uuid;
-    setImmediate(() => {
-      recordServedReleases(
-        uuid,
-        id,
-        finalStreams.map((s) => ({
-          url: s.url,
-          size: s.size,
-          filename: s.filename,
-        }))
-      ).catch((error) => {
-        logger.debug(
-          { error: error instanceof Error ? error.message : String(error) },
-          'failed to record served releases for subtitles'
-        );
-      });
-    });
-  }
+  recordReleasesForSubtitles(ctx, id, finalStreams);
 
   const response: StreamsResponse = {
     success: true,
