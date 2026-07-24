@@ -46,6 +46,11 @@ export {
   type UsenetIndexerRollup,
   type UsenetIndexerLastError,
 } from './repositories/usenet-indexer-metrics.js';
+export {
+  SubtitleJobRepository,
+  type SubtitleJobMeta,
+  type SubtitleJobListRow,
+} from './repositories/subtitle-jobs.js';
 export * from './schemas.js';
 
 export { sql, raw, join, SqlFragment } from './sql.js';

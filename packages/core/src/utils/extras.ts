@@ -50,6 +50,18 @@ export class ExtrasParser {
     this.extras = { ...this.extras, skip: value };
   }
 
+  get filename(): string | undefined {
+    return 'filename' in this.extras ? this.extras.filename : undefined;
+  }
+
+  get videoSize(): number | undefined {
+    return 'videoSize' in this.extras ? this.extras.videoSize : undefined;
+  }
+
+  get videoHash(): string | undefined {
+    return 'videoHash' in this.extras ? this.extras.videoHash : undefined;
+  }
+
   public has(key: keyof Extras): boolean {
     return key in this.extras && this.extras[key] !== undefined;
   }

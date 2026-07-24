@@ -34,6 +34,7 @@ import type {
   AIOStreamsResponse,
 } from './types.js';
 import { buildStatistics } from './statistics.js';
+import { recordServedReleases, buildSubtitleSlots } from '../subtitles/index.js';
 import { precacheCache } from './caches.js';
 import {
   applyPosterModifications,
@@ -979,6 +980,29 @@ export async function getStreams(
     },
     'stream request complete'
   );
+  // Remember the served releases so a later subtitle request can map the
+  // file the user plays back to its owned playback URL for extraction (spec
+  // §3.3/§4.2). Non-blocking; failures here must not affect the stream reply.
+  if (ctx.userData?.uuid && ctx.userData.subtitleTranslation?.enabled) {
+    const uuid = ctx.userData.uuid;
+    setImmediate(() => {
+      recordServedReleases(
+        uuid,
+        id,
+        finalStreams.map((s) => ({
+          url: s.url,
+          size: s.size,
+          filename: s.filename,
+        }))
+      ).catch((error) => {
+        logger.debug(
+          { error: error instanceof Error ? error.message : String(error) },
+          'failed to record served releases for subtitles'
+        );
+      });
+    });
+  }
+
   const response: StreamsResponse = {
     success: true,
     data: { streams: finalStreams, statistics },
@@ -1102,6 +1126,19 @@ export async function getSubtitles(
       }
     })
   );
+
+  // AIOStreams' own generated subtitle slots (extract + translate, spec §5).
+  // Resolved synchronously from this request's identity fields; adds nothing
+  // if the feature is off or the release can't be identified.
+  try {
+    const slots = await buildSubtitleSlots(ctx.userData, type, id, extras);
+    if (slots.length > 0) allSubtitles.push(...slots);
+  } catch (error) {
+    logger.debug(
+      { error: error instanceof Error ? error.message : String(error) },
+      'failed to build subtitle translation slots'
+    );
+  }
 
   return { success: true, data: allSubtitles, errors };
 }

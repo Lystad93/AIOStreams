@@ -4,6 +4,8 @@ import { Switch } from '../../../ui/switch';
 import { Select } from '../../../ui/select';
 import { Combobox } from '../../../ui/combobox';
 import { NumberInput } from '../../../ui/number-input/number-input';
+import { TextInput } from '../../../ui/text-input/text-input';
+import { PasswordInput } from '../../../ui/password-input/password-input';
 import { Alert } from '../../../ui/alert';
 import {
   AUTO_PLAY_ATTRIBUTES,
@@ -11,7 +13,13 @@ import {
   AutoPlayMethod,
   AUTO_PLAY_METHODS,
   AUTO_PLAY_METHOD_DETAILS,
+  LANGUAGES,
 } from '../../../../../../core/src/utils/constants';
+
+const SUBTITLE_LANGUAGE_OPTIONS = LANGUAGES.map((lang) => ({
+  label: lang,
+  value: lang,
+}));
 
 // Note: NZB Failover and Auto Remove Downloads have been moved to the Services menu (Built-in tab).
 
@@ -166,6 +174,125 @@ export function PlaybackBehavior() {
             }}
           />
         </div>
+      </SettingsCard>
+
+      <SettingsCard
+        title="Subtitle Translation"
+        id="subtitleTranslation"
+        description={
+          <div className="space-y-2">
+            <p>
+              Extract an embedded text subtitle track from the file you're about
+              to watch and machine-translate it into your preferred language
+              using your own AI provider key. A "Translate Exact" entry appears
+              in Stremio/Nuvio's subtitle menu for the playing stream.
+            </p>
+            <Alert intent="warning-basic">
+              <p className="text-sm">
+                Extraction downloads the release on your backbone (same cost as
+                playing it once) and only runs when you explicitly pick the
+                subtitle entry — never automatically. Translation uses your own
+                API key. The instance owner can disable extraction entirely.
+              </p>
+            </Alert>
+          </div>
+        }
+      >
+        <Switch
+          label="Enable"
+          side="right"
+          value={userData.subtitleTranslation?.enabled ?? false}
+          onValueChange={(value) => {
+            setUserData((prev) => ({
+              ...prev,
+              subtitleTranslation: {
+                ...prev.subtitleTranslation,
+                enabled: value,
+              },
+            }));
+          }}
+        />
+        <Select
+          label="Provider"
+          disabled={!userData.subtitleTranslation?.enabled}
+          options={[{ label: 'Google Gemini', value: 'gemini' }]}
+          value={userData.subtitleTranslation?.provider || 'gemini'}
+          onValueChange={(value) => {
+            setUserData((prev) => ({
+              ...prev,
+              subtitleTranslation: {
+                ...prev.subtitleTranslation,
+                provider: value as 'gemini',
+              },
+            }));
+          }}
+        />
+        <PasswordInput
+          label="API Key"
+          autoComplete="off"
+          disabled={!userData.subtitleTranslation?.enabled}
+          help="Your own provider API key. Stored with your configuration and never shared."
+          value={userData.subtitleTranslation?.apiKey ?? ''}
+          onValueChange={(value) => {
+            setUserData((prev) => ({
+              ...prev,
+              subtitleTranslation: {
+                ...prev.subtitleTranslation,
+                apiKey: value,
+              },
+            }));
+          }}
+        />
+        <Select
+          label="Translate into"
+          disabled={!userData.subtitleTranslation?.enabled}
+          help="The language subtitles will be translated into."
+          options={SUBTITLE_LANGUAGE_OPTIONS}
+          value={userData.subtitleTranslation?.targetLanguage}
+          onValueChange={(value) => {
+            setUserData((prev) => ({
+              ...prev,
+              subtitleTranslation: {
+                ...prev.subtitleTranslation,
+                targetLanguage: value,
+              },
+            }));
+          }}
+        />
+        <Combobox
+          label="Preferred source languages"
+          multiple
+          disabled={!userData.subtitleTranslation?.enabled}
+          help="In priority order: which embedded track to translate from when several exist (e.g. prefer Danish over English). Leave empty to use the first text track found."
+          options={SUBTITLE_LANGUAGE_OPTIONS}
+          emptyMessage="No languages found"
+          value={userData.subtitleTranslation?.sourceLanguages}
+          onValueChange={(value) => {
+            setUserData((prev) => ({
+              ...prev,
+              subtitleTranslation: {
+                ...prev.subtitleTranslation,
+                sourceLanguages: value as string[],
+              },
+            }));
+          }}
+        />
+        <TextInput
+          label="Model (optional)"
+          disabled={!userData.subtitleTranslation?.enabled}
+          placeholder="gemini-2.0-flash"
+          help="Override the translation model. Leave blank for the provider default."
+          value={userData.subtitleTranslation?.model ?? ''}
+          onValueChange={(value) => {
+            setUserData((prev) => ({
+              ...prev,
+              subtitleTranslation: {
+                ...prev.subtitleTranslation,
+                model: value || undefined,
+              },
+            }));
+          }}
+        />
       </SettingsCard>
     </>
   );

@@ -14,6 +14,24 @@ export * from './debrid/index.js';
 export * from './usenet/integration/index.js';
 export * from './release-blocklist/index.js';
 export * from './proxy/index.js';
+export {
+  buildSubtitleSlots,
+  resolveSubtitleConfig,
+  getFinishedResult,
+  startExactJob,
+  estimateEtaSeconds,
+  lookupServedRelease,
+  releaseHash,
+  decodeSubtitleToken,
+  encodeSubtitleToken,
+  serializeSrt,
+  parseSrt,
+  getJob,
+  BitmapOnlySubtitleError,
+  type SubtitleJob,
+  type SubtitleJobKey,
+  type SubtitleTokenPayload,
+} from './subtitles/index.js';
 export { SceneMappingDataset } from './metadata/scene-mappings.js';
 export { IdMappingDataset } from './metadata/id-mappings.js';
 export {

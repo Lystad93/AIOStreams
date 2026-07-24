@@ -13,6 +13,7 @@ import {
   UsersPage,
   TasksPage,
   CachePage,
+  SubtitlesPage,
   BlocklistLayout,
   BlocklistSourcesPage,
   BlocklistEntriesPage,
@@ -200,6 +201,12 @@ const dashboardCacheRoute = createRoute({
   component: CachePage,
 });
 
+const dashboardSubtitlesRoute = createRoute({
+  getParentRoute: () => dashboardRoute,
+  path: 'subtitles',
+  component: SubtitlesPage,
+});
+
 const dashboardBlocklistRoute = createRoute({
   getParentRoute: () => dashboardRoute,
   path: 'blocklist',
@@ -296,6 +303,7 @@ const routeTree = rootRoute.addChildren([
     dashboardProxyRoute,
     dashboardUsersRoute,
     dashboardTasksRoute,
+    dashboardSubtitlesRoute,
     dashboardCacheRoute,
     dashboardBlocklistRoute.addChildren([
       dashboardBlocklistIndexRoute,

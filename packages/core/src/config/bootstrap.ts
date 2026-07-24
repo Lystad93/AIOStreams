@@ -31,6 +31,10 @@ export const bootstrap = {
   buildTime: Env.BUILD_TIME,
   buildCommitTime: Env.BUILD_COMMIT_TIME,
   systemLifecycleEnabled: Env.SYSTEM_LIFECYCLE_ENABLED,
+  subtitleTranslationEnabled: Env.SUBTITLE_TRANSLATION_ENABLED,
+  subtitleExtractionAllowed: Env.SUBTITLE_EXTRACTION_ALLOWED,
+  ffmpegPath: Env.FFMPEG_PATH,
+  ffprobePath: Env.FFPROBE_PATH,
 } as const;
 
 export type BootstrapConfig = typeof bootstrap;

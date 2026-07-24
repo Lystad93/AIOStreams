@@ -16,6 +16,7 @@ import {
   authApi,
   dashboardApi,
   usenetApi,
+  subtitlesApi,
 } from './routes/api/index.js';
 import {
   configure,
@@ -134,6 +135,7 @@ apiRouter.use('/sync', syncApi);
 apiRouter.use('/auth', authApi);
 apiRouter.use('/dashboard', dashboardApi);
 apiRouter.use('/usenet', usenetApi);
+apiRouter.use('/subtitles', subtitlesApi);
 apiRouter.use('/sabnzbd', sabnzbdRouter);
 apiRouter.use('/newznab', createNabRouter('newznab'));
 apiRouter.use('/torznab', createNabRouter('torznab'));

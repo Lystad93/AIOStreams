@@ -11,6 +11,7 @@ import {
   BiBlock,
   BiNetworkChart,
   BiCog,
+  BiCaptions,
 } from 'react-icons/bi';
 import { SECTIONS } from '@/app/dashboard/usenet/sections';
 import { BLOCKLIST_SECTIONS } from '@/app/dashboard/blocklist/sections';
@@ -34,6 +35,7 @@ export const NAV: DashboardNavItem[] = [
   { label: 'Tasks', href: '/dashboard/tasks', icon: BiTask },
   { label: 'Cache', href: '/dashboard/cache', icon: BiData },
   { label: 'Usenet', href: '/dashboard/usenet', icon: BiCloudDownload },
+  { label: 'Subtitles', href: '/dashboard/subtitles', icon: BiCaptions },
   { label: 'Blocklists', href: '/dashboard/blocklist', icon: BiBlock },
   { label: 'Proxy', href: '/dashboard/proxy', icon: BiNetworkChart },
   { label: 'Settings', href: '/dashboard/settings', icon: BiCog },

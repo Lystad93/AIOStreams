@@ -6,6 +6,7 @@ export { UsersPage } from '@/app/dashboard/users/users-page';
 export { ProxyPage } from '@/app/dashboard/proxy/proxy-page';
 export { TasksPage } from '@/app/dashboard/tasks/tasks-page';
 export { CachePage } from '@/app/dashboard/cache/cache-page';
+export { SubtitlesPage } from '@/app/dashboard/subtitles/subtitles-page';
 export { BlocklistLayout } from '@/app/dashboard/blocklist/blocklist-layout';
 export { BlocklistSourcesPage } from '@/app/dashboard/blocklist/sources-page';
 export { BlocklistEntriesPage } from '@/app/dashboard/blocklist/entries-page';

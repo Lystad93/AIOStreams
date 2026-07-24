@@ -103,6 +103,17 @@ COPY --from=busybox:1.36.0-uclibc /bin/wget /bin/wget
 COPY --from=busybox:1.36.0-uclibc /bin/sh /bin/sh
 COPY --from=mimalloc /usr/local/lib/libmimalloc.so.2 /usr/local/lib/libmimalloc.so.2
 ENV LD_PRELOAD=/usr/local/lib/libmimalloc.so.2
+
+# Static ffmpeg/ffprobe for embedded-subtitle extraction (spec §4.2). Static
+# builds carry no shared-library dependencies, so they run in the distroless
+# final image where apt-get is unavailable. The explicit FFMPEG_PATH/
+# FFPROBE_PATH env vars point the extractor at them regardless of $PATH.
+# Bump the tag to track ffmpeg releases.
+COPY --from=mwader/static-ffmpeg:7.1 /ffmpeg /usr/local/bin/ffmpeg
+COPY --from=mwader/static-ffmpeg:7.1 /ffprobe /usr/local/bin/ffprobe
+ENV FFMPEG_PATH=/usr/local/bin/ffmpeg
+ENV FFPROBE_PATH=/usr/local/bin/ffprobe
+
 COPY --from=runtime /runtime /app
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \

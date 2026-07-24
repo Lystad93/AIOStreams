@@ -783,6 +783,22 @@ export const UserDataSchema = z.object({
     })
     .optional(),
   deduplicator: DeduplicatorOptions.optional(),
+  // Subtitle extraction + AI translation (spec §4.2/§4.4). Per-user because it
+  // uses the user's own translation API key (BYO, §7).
+  subtitleTranslation: z
+    .object({
+      enabled: z.boolean().optional(),
+      // Ordered source-language priority for the translation INPUT: which
+      // embedded/source track to prefer when several exist (§4.4). First match
+      // wins (e.g. a Norwegian user preferring Danish over English).
+      sourceLanguages: z.array(z.string().min(1)).optional(),
+      // The language to translate INTO.
+      targetLanguage: z.string().min(1).optional(),
+      provider: z.enum(['gemini']).optional(),
+      apiKey: z.string().optional(),
+      model: z.string().optional(),
+    })
+    .optional(),
   autoPlay: z
     .object({
       enabled: z.boolean().optional(),
