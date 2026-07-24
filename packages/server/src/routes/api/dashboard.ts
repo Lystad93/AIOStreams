@@ -25,6 +25,7 @@ import { createResponse } from '../../utils/responses.js';
 import { getSystemMetrics } from '../../utils/system-metrics.js';
 import usenetDashboard from './dashboard-usenet.js';
 import blocklistDashboard from './dashboard-blocklist.js';
+import subtitlesDashboard from './dashboard-subtitles.js';
 
 const router: Router = Router();
 const logger = createLogger('dashboard');
@@ -37,6 +38,9 @@ router.use('/usenet', usenetDashboard);
 
 // Release blocklist: sources, entries, overrides, import/export.
 router.use('/blocklist', blocklistDashboard);
+
+// Subtitle extraction+translation jobs: list, download SRTs, delete.
+router.use('/subtitles', subtitlesDashboard);
 
 function csv(v: unknown): string[] | undefined {
   if (typeof v !== 'string' || !v.trim()) return undefined;
