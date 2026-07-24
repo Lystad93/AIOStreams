@@ -110,7 +110,30 @@ export class AIOStreams {
 
   public getResources(): StrictManifestResource[] {
     this.checkInitialised();
-    return this.ctx.finalResources;
+    const resources = [...this.ctx.finalResources];
+    // Subtitle translation (spec §4.2/§4.4) generates its own subtitle entries
+    // in getSubtitles. The player only calls the subtitle endpoint if the
+    // manifest advertises the `subtitles` resource — so when the feature is
+    // enabled we advertise it even if no subtitle addon is configured,
+    // otherwise the translate slots can never surface. Types/idPrefixes are
+    // borrowed from the stream resource so subtitles are requested for exactly
+    // the content this addon serves.
+    if (
+      appConfig.bootstrap.subtitleTranslationEnabled &&
+      this.ctx.userData.subtitleTranslation?.enabled &&
+      !resources.some((r) => r.name === 'subtitles')
+    ) {
+      const streamRes = resources.find((r) => r.name === 'stream');
+      resources.push({
+        name: 'subtitles',
+        types:
+          streamRes?.types && streamRes.types.length > 0
+            ? streamRes.types
+            : ['movie', 'series'],
+        idPrefixes: streamRes?.idPrefixes,
+      });
+    }
+    return resources;
   }
 
   public getCatalogs(): Manifest['catalogs'] {
