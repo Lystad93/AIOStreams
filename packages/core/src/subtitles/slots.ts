@@ -16,8 +16,9 @@
 import { createLogger } from '../logging/logger.js';
 import { appConfig } from '../utils/index.js';
 import type { Subtitle, UserData } from '../db/schemas.js';
+import { SubtitleJobRepository } from '../db/index.js';
 import { ExtrasParser } from '../utils/extras.js';
-import { getJob, resultId, getResult } from './job-store.js';
+import { getJob, jobId, resultId, getResult } from './job-store.js';
 import { lookupServedRelease, releaseHash } from './release-lookup.js';
 import { estimateEtaSeconds } from './pipeline.js';
 import { encodeSubtitleToken } from './token.js';
@@ -137,26 +138,14 @@ export async function buildSubtitleSlots(
     return [];
   }
 
-  const job = await getJob(key);
-  const eta = fmtEta(
-    estimateEtaSeconds({ fileSizeBytes: served.size })
-  );
-
+  const eta = fmtEta(estimateEtaSeconds({ fileSizeBytes: served.size }));
   const slots: Subtitle[] = [];
 
-  if (!job || job.status === 'failed') {
-    // Offer (or re-offer, after a failure) the trigger. Clicking it starts the
-    // background job and returns an immediate placeholder (spec §5).
-    const label =
-      job?.status === 'failed'
-        ? `Retry: Translate Exact → ${cfg.targetLanguage} (${eta})`
-        : `Translate Exact → ${cfg.targetLanguage} (${eta})`;
-    slots.push({ id: SLOT_ID.trigger, url: slotUrl('exact', token), lang: label });
-    return slots;
-  }
-
-  if (job.status === 'done' && job.resultKey) {
-    // FINISHED slot: real target-language track, served from the stored SRT.
+  // 1. Durable reuse first: if a finished translation is already stored in the
+  // DB (permanent, survives cache TTL and restarts), serve it — never re-extract
+  // or re-translate a file we've already done.
+  const durableDone = await SubtitleJobRepository.hasTranslated(jobId(key));
+  if (durableDone) {
     slots.push({
       id: SLOT_ID.finished,
       url: slotUrl('result', token),
@@ -165,24 +154,43 @@ export async function buildSubtitleSlots(
     return slots;
   }
 
-  // pending / running → always-present "not ready" placeholder with ETA.
-  slots.push({
-    id: SLOT_ID.notReady,
-    url: slotUrl('result', token),
-    lang: `Translating Exact → ${cfg.targetLanguage}… not ready (${fmtEta(
-      job.etaSeconds || estimateEtaSeconds({ fileSizeBytes: served.size })
-    )})`,
-  });
+  // 2. Otherwise consult the live job cache for in-flight / failed state.
+  const job = await getJob(key);
+
+  if (job && (job.status === 'pending' || job.status === 'running')) {
+    // Always-present "not ready" placeholder with ETA while a job is in flight.
+    slots.push({
+      id: SLOT_ID.notReady,
+      url: slotUrl('result', token),
+      lang: `Translating Exact → ${cfg.targetLanguage}… not ready (${fmtEta(
+        job.etaSeconds || estimateEtaSeconds({ fileSizeBytes: served.size })
+      )})`,
+    });
+    return slots;
+  }
+
+  // 3. No stored result and nothing running → offer (or re-offer, after a
+  // failure) the trigger. Clicking it starts the background job (spec §5).
+  const label =
+    job?.status === 'failed'
+      ? `Retry: Translate Exact → ${cfg.targetLanguage} (${eta})`
+      : `Translate Exact → ${cfg.targetLanguage} (${eta})`;
+  slots.push({ id: SLOT_ID.trigger, url: slotUrl('exact', token), lang: label });
   return slots;
 }
 
-/** Convenience for the route: does a finished result exist for this key? */
+/** Convenience for the route: the finished SRT for this key, if one exists. */
 export async function getFinishedResult(
   key: SubtitleJobKey
 ): Promise<string | undefined> {
   const job = await getJob(key);
   if (job?.status === 'done' && job.resultKey) {
-    return getResult(job.resultKey);
+    const cached = await getResult(job.resultKey);
+    if (cached) return cached;
   }
-  return getResult(resultId(key));
+  const byResultId = await getResult(resultId(key));
+  if (byResultId) return byResultId;
+  // Durable fallback: the permanent DB record outlives the result cache TTL.
+  const stored = await SubtitleJobRepository.getSrt(jobId(key), 'translated');
+  return stored?.srt;
 }

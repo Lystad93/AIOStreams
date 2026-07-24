@@ -180,6 +180,16 @@ export const SubtitleJobRepository = {
     return { srt: row.srt, filename: row.filename ?? undefined };
   },
 
+  /** Cheap check: is a finished translation stored for this job id? */
+  async hasTranslated(id: string): Promise<boolean> {
+    const row = await getDb().maybeOne<{ [k: string]: unknown; n: number | string }>(
+      sql`SELECT CASE WHEN translated_srt IS NOT NULL AND LENGTH(translated_srt) > 0
+                 THEN 1 ELSE 0 END AS n
+          FROM subtitle_jobs WHERE id = ${id}`
+    );
+    return !!row && Number(row.n) === 1;
+  },
+
   async delete(id: string): Promise<void> {
     await getDb().exec(sql`DELETE FROM subtitle_jobs WHERE id = ${id}`);
   },

@@ -79,6 +79,10 @@ test('subtitle_jobs: write-through lifecycle + SRT download round-trip', async (
   const translated = await SubtitleJobRepository.getSrt('job-1', 'translated');
   assert.equal(translated?.srt, 'TRANSLATED SRT');
 
+  // Durable reuse check used by the slot builder.
+  assert.equal(await SubtitleJobRepository.hasTranslated('job-1'), true);
+  assert.equal(await SubtitleJobRepository.hasTranslated('nope'), false);
+
   assert.equal(await SubtitleJobRepository.count(), 1);
 
   await SubtitleJobRepository.delete('job-1');
@@ -105,4 +109,5 @@ test('subtitle_jobs: failed job stores error and no translated SRT', async () =>
   assert.equal(row!.error, 'bitmap only');
   assert.equal(row!.translatedBytes, 0);
   assert.equal(await SubtitleJobRepository.getSrt('job-2', 'translated'), null);
+  assert.equal(await SubtitleJobRepository.hasTranslated('job-2'), false);
 });
