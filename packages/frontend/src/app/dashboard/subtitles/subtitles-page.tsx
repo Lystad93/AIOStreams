@@ -12,7 +12,7 @@ import {
 } from '@/components/shared/confirmation-dialog';
 import { DashboardQueryBoundary } from '@/components/shared/dashboard-query-boundary';
 import { api } from '@/lib/api';
-import { formatBytes } from '@/lib/format';
+import { formatBytes, formatDurationMs } from '@/lib/format';
 
 interface SubtitleJob {
   id: string;
@@ -31,6 +31,7 @@ interface SubtitleJob {
   createdAt: number;
   updatedAt: number;
   completedAt?: number;
+  durationMs?: number;
   extractedBytes: number;
   translatedBytes: number;
 }
@@ -123,6 +124,7 @@ export function SubtitlesPage() {
                       <th className="p-3">Language</th>
                       <th className="p-3 text-right">Cues</th>
                       <th className="p-3 text-right">Size</th>
+                      <th className="p-3 text-right">Time taken</th>
                       <th className="p-3">Updated</th>
                       <th className="p-3">Files</th>
                       <th className="p-3 text-right">Actions</th>
@@ -179,6 +181,11 @@ export function SubtitlesPage() {
                         <td className="p-3 text-right tabular-nums whitespace-nowrap">
                           {job.videoSize != null
                             ? formatBytes(job.videoSize)
+                            : '—'}
+                        </td>
+                        <td className="p-3 text-right tabular-nums whitespace-nowrap">
+                          {job.durationMs != null
+                            ? formatDurationMs(job.durationMs)
                             : '—'}
                         </td>
                         <td className="p-3 whitespace-nowrap text-xs text-[--muted]">

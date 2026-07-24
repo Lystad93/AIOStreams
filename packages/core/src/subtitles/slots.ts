@@ -239,8 +239,8 @@ export async function precacheTranslateExact(
   });
   if (started) {
     logger.info(
-      { contentId, target: cfg.targetLanguage },
-      'pre-translating next episode subtitle'
+      { contentId, target: cfg.targetLanguage, release: stream.filename },
+      'pre-translating next episode subtitle (precache-selected release)'
     );
   }
 }

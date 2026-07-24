@@ -50,7 +50,12 @@ test('subtitle_jobs: write-through lifecycle + SRT download round-trip', async (
     updatedAt: 1100,
   });
   await SubtitleJobRepository.setExtractedSrt('job-1', 'EXTRACTED SRT', 12, 1200);
-  await SubtitleJobRepository.setTranslatedSrt('job-1', 'TRANSLATED SRT', 1300);
+  await SubtitleJobRepository.setTranslatedSrt(
+    'job-1',
+    'TRANSLATED SRT',
+    1300,
+    45_000
+  );
   await SubtitleJobRepository.saveMeta({
     ...base,
     status: 'done',
@@ -69,6 +74,7 @@ test('subtitle_jobs: write-through lifecycle + SRT download round-trip', async (
   assert.equal(row.filename, 'Show.S01E02.1080p.mkv');
   assert.equal(row.videoSize, 3_000_000_000);
   assert.equal(row.completedAt, 1300);
+  assert.equal(row.durationMs, 45_000);
   // List must expose SRT presence via lengths, not bodies.
   assert.equal(row.extractedBytes, 'EXTRACTED SRT'.length);
   assert.equal(row.translatedBytes, 'TRANSLATED SRT'.length);

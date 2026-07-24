@@ -118,7 +118,7 @@ async function persistMeta(
       model: input.model,
       error: extra?.error,
       createdAt: job.createdAt,
-      updatedAt: input.now,
+      updatedAt: Date.now(),
       completedAt: extra?.completedAt,
     });
   } catch (err) {
@@ -130,15 +130,17 @@ async function persistMeta(
 }
 
 async function runExactJob(input: RunJobInput): Promise<void> {
-  const { job, playbackUrl, now } = input;
+  const { job, playbackUrl } = input;
   const provider: TranslationProvider = getTranslationProvider(
     input.providerId
   );
 
   const id = jobId(job);
+  // Real wall-clock start; the passed-in `now` is only the creation stamp.
+  const startedMs = Date.now();
   const mark = async (patch: Partial<SubtitleJob>) => {
     const current = (await getJob(job)) ?? job;
-    await putJob({ ...current, ...patch, updatedAt: now });
+    await putJob({ ...current, ...patch, updatedAt: Date.now() });
   };
 
   try {
@@ -158,9 +160,12 @@ async function runExactJob(input: RunJobInput): Promise<void> {
     if (cues.length === 0) throw new Error('Extracted subtitle had no cues');
     await mark({ status: 'running', sourceLang: track.language });
     // Persist the extracted (pre-translation) SRT for dashboard download.
-    await SubtitleJobRepository.setExtractedSrt(id, srt, cues.length, now).catch(
-      () => {}
-    );
+    await SubtitleJobRepository.setExtractedSrt(
+      id,
+      srt,
+      cues.length,
+      Date.now()
+    ).catch(() => {});
     await persistMeta(job, input, 'running', {
       sourceLang: track.language,
     });
@@ -184,15 +189,26 @@ async function runExactJob(input: RunJobInput): Promise<void> {
 
     const outSrt = serializeSrt(translated);
     const rid = resultId(job);
+    const completedMs = Date.now();
+    const durationMs = completedMs - startedMs;
     await putResult(rid, outSrt);
     await mark({ status: 'done', resultKey: rid, sourceLang: track.language });
-    await SubtitleJobRepository.setTranslatedSrt(id, outSrt, now).catch(() => {});
+    await SubtitleJobRepository.setTranslatedSrt(
+      id,
+      outSrt,
+      completedMs,
+      durationMs
+    ).catch(() => {});
     await persistMeta(job, input, 'done', {
       sourceLang: track.language,
-      completedAt: now,
+      completedAt: completedMs,
     });
     logger.info(
-      { contentId: job.contentId, target: job.targetLang },
+      {
+        contentId: job.contentId,
+        target: job.targetLang,
+        durationMs,
+      },
       'subtitle translation complete'
     );
   } catch (err) {

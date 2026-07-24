@@ -73,7 +73,12 @@ export async function createJobIfAbsent(
   next: SubtitleJob
 ): Promise<{ job: SubtitleJob; created: boolean }> {
   const existing = await getJob(next);
-  if (existing) return { job: existing, created: false };
+  // A pending/running/done job blocks a duplicate; a FAILED one must not — the
+  // "Retry" slot needs to start a fresh attempt (important now that the job
+  // cache is persistent and a failure survives restarts).
+  if (existing && existing.status !== 'failed') {
+    return { job: existing, created: false };
+  }
   await putJob(next);
   return { job: next, created: true };
 }

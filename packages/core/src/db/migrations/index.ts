@@ -15,6 +15,7 @@ import { releaseBlocklistPublish } from './0014_release_blocklist_publish.js';
 import { usenetLatency } from './0015_usenet_latency.js';
 import { usenetIndexerMetrics } from './0016_usenet_indexer_metrics.js';
 import { subtitleJobs } from './0017_subtitle_jobs.js';
+import { subtitleJobDuration } from './0018_subtitle_job_duration.js';
 import type { Migration } from './types.js';
 
 export const MIGRATIONS: readonly Migration[] = [
@@ -35,6 +36,7 @@ export const MIGRATIONS: readonly Migration[] = [
   usenetLatency,
   usenetIndexerMetrics,
   subtitleJobs,
+  subtitleJobDuration,
 ];
 
 export type { Migration } from './types.js';

@@ -33,6 +33,8 @@ export interface SubtitleJobListRow extends SubtitleJobMeta {
   cueCount?: number;
   extractedBytes: number;
   translatedBytes: number;
+  /** Wall-clock of the successful run (extraction + translation), ms. */
+  durationMs?: number;
 }
 
 interface DbRow {
@@ -54,6 +56,7 @@ interface DbRow {
   created_at: number | string;
   updated_at: number | string;
   completed_at: number | string | null;
+  duration_ms: number | string | null;
   extracted_len?: number | string | null;
   translated_len?: number | string | null;
 }
@@ -80,6 +83,7 @@ function toListRow(r: DbRow): SubtitleJobListRow {
     createdAt: Number(r.created_at),
     updatedAt: Number(r.updated_at),
     completedAt: num(r.completed_at),
+    durationMs: num(r.duration_ms),
     extractedBytes: num(r.extracted_len) ?? 0,
     translatedBytes: num(r.translated_len) ?? 0,
   };
@@ -130,12 +134,13 @@ export const SubtitleJobRepository = {
   async setTranslatedSrt(
     id: string,
     srt: string,
-    completedAt: number
+    completedAt: number,
+    durationMs: number
   ): Promise<void> {
     await getDb().exec(sql`
       UPDATE subtitle_jobs
       SET translated_srt = ${srt}, completed_at = ${completedAt},
-          updated_at = ${completedAt}
+          updated_at = ${completedAt}, duration_ms = ${durationMs}
       WHERE id = ${id}
     `);
   },
@@ -149,7 +154,7 @@ export const SubtitleJobRepository = {
     const rows = await getDb().query<DbRow>(sql`
       SELECT id, uuid, content_id, release_hash, source_path, target_lang,
              source_lang, status, filename, video_size, provider, model,
-             cue_count, error, created_at, updated_at, completed_at,
+             cue_count, error, created_at, updated_at, completed_at, duration_ms,
              LENGTH(extracted_srt) AS extracted_len,
              LENGTH(translated_srt) AS translated_len
       FROM subtitle_jobs
