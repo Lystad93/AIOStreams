@@ -20,9 +20,10 @@ import { SubtitleJobRepository } from '../db/index.js';
 import { ExtrasParser } from '../utils/extras.js';
 import { getJob, jobId, resultId, getResult } from './job-store.js';
 import { lookupServedRelease, releaseHash } from './release-lookup.js';
-import { estimateEtaSeconds } from './pipeline.js';
+import { estimateEtaSeconds, startExactJob } from './pipeline.js';
 import { encodeSubtitleToken } from './token.js';
-import type { SubtitleJobKey } from './types.js';
+import { PLAYBACK_PATH_PREFIX } from '../debrid/utils.js';
+import type { SubtitleJob, SubtitleJobKey } from './types.js';
 
 const logger = createLogger('subtitles');
 
@@ -177,6 +178,71 @@ export async function buildSubtitleSlots(
       : `Translate Exact → ${cfg.targetLanguage} (${eta})`;
   slots.push({ id: SLOT_ID.trigger, url: slotUrl('exact', token), lang: label });
   return slots;
+}
+
+/**
+ * Pre-translate the exact subtitle for a release that AIOStreams is precaching
+ * (the next episode during a binge, spec §6). Fire-and-forget; gated so it only
+ * runs when the user opted into BOTH precache-next-episode and this toggle, and
+ * skips work that's already done or already in flight.
+ */
+export async function precacheTranslateExact(
+  userData: UserData,
+  contentId: string,
+  stream: { url?: string; size?: number; filename?: string },
+  now: number
+): Promise<void> {
+  const cfg = resolveSubtitleConfig(userData);
+  if (!cfg) return;
+  if (!userData.subtitleTranslation?.precacheNextEpisode) return;
+  if (!appConfig.bootstrap.subtitleExtractionAllowed) return;
+  const uuid = userData.uuid;
+  if (!uuid) return;
+  // Only our own, demuxable playback URLs (spec §4.2).
+  if (!stream.url || !stream.url.includes(PLAYBACK_PATH_PREFIX)) return;
+  if (stream.size == null && !stream.filename) return;
+
+  const key: SubtitleJobKey = {
+    uuid,
+    contentId,
+    releaseHash: releaseHash({ size: stream.size, filename: stream.filename }),
+    sourcePath: 'exact',
+    targetLang: cfg.targetLanguage,
+  };
+
+  // Already translated (durable) → nothing to do.
+  if (await SubtitleJobRepository.hasTranslated(jobId(key))) return;
+
+  const job: SubtitleJob = {
+    ...key,
+    status: 'pending',
+    etaSeconds: estimateEtaSeconds({ fileSizeBytes: stream.size }),
+    createdAt: now,
+    updatedAt: now,
+    filename: stream.filename,
+    videoSize: stream.size,
+    provider: cfg.provider,
+    model: cfg.model,
+  };
+
+  const { started } = await startExactJob({
+    job,
+    playbackUrl: stream.url,
+    sourceLanguages: cfg.sourceLanguages,
+    targetLanguage: cfg.targetLanguage,
+    apiKey: cfg.apiKey,
+    providerId: cfg.provider,
+    model: cfg.model,
+    filename: stream.filename,
+    videoSize: stream.size,
+    now,
+  });
+  if (started) {
+    logger.info(
+      { contentId, target: cfg.targetLanguage },
+      'pre-translating next episode subtitle'
+    );
+  }
 }
 
 /** Convenience for the route: the finished SRT for this key, if one exists. */

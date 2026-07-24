@@ -797,6 +797,12 @@ export const UserDataSchema = z.object({
       provider: z.enum(['gemini']).optional(),
       apiKey: z.string().optional(),
       model: z.string().optional(),
+      // Pre-translate the next episode alongside AIOStreams' existing
+      // precache-next-episode feature, so a binge-watcher lands on an
+      // already-translated subtitle (spec §6). Only runs when BOTH this and
+      // `precacheNextEpisode` (top-level) are enabled — it does a speculative
+      // full-file extract, so it's opt-in.
+      precacheNextEpisode: z.boolean().optional(),
     })
     .optional(),
   autoPlay: z

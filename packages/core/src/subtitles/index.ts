@@ -15,6 +15,7 @@ export {
   buildSubtitleSlots,
   resolveSubtitleConfig,
   getFinishedResult,
+  precacheTranslateExact,
 } from './slots.js';
 export {
   startExactJob,

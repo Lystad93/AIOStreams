@@ -34,7 +34,11 @@ import type {
   AIOStreamsResponse,
 } from './types.js';
 import { buildStatistics } from './statistics.js';
-import { recordServedReleases, buildSubtitleSlots } from '../subtitles/index.js';
+import {
+  recordServedReleases,
+  buildSubtitleSlots,
+  precacheTranslateExact,
+} from '../subtitles/index.js';
 import { precacheCache } from './caches.js';
 import {
   applyPosterModifications,
@@ -591,6 +595,24 @@ async function precacheNextEpisode(
   );
 
   await pingStreamUrls(streamsToCache);
+
+  // Pre-translate the next episode's subtitle if the user opted in, so a
+  // binge-watcher lands on an already-finished translation (spec §6).
+  // Gated inside precacheTranslateExact; skips work already done/in-flight.
+  if (ctx.userData.subtitleTranslation?.precacheNextEpisode) {
+    const top = streamsToCache[0];
+    precacheTranslateExact(
+      ctx.userData,
+      precacheId,
+      { url: top.url, size: top.size, filename: top.filename },
+      Date.now()
+    ).catch((error) => {
+      logger.debug(
+        { error: error instanceof Error ? error.message : String(error) },
+        'failed to start next-episode subtitle pre-translation'
+      );
+    });
+  }
 
   logger.debug(
     { count: streamsToCache.length, id, type },

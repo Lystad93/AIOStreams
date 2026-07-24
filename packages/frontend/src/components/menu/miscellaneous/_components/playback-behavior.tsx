@@ -293,6 +293,29 @@ export function PlaybackBehavior() {
             }));
           }}
         />
+        <Switch
+          label="Pre-translate next episode"
+          side="right"
+          disabled={
+            !userData.subtitleTranslation?.enabled ||
+            !userData.precacheNextEpisode
+          }
+          help={
+            userData.precacheNextEpisode
+              ? 'When binge-watching, translate the next episode ahead of time so it is ready with no wait. Extracts the next file early (extra bandwidth), so it only runs when Precache next episode is also enabled.'
+              : 'Requires the "Precache next episode" feature to be enabled first.'
+          }
+          value={userData.subtitleTranslation?.precacheNextEpisode ?? false}
+          onValueChange={(value) => {
+            setUserData((prev) => ({
+              ...prev,
+              subtitleTranslation: {
+                ...prev.subtitleTranslation,
+                precacheNextEpisode: value,
+              },
+            }));
+          }}
+        />
       </SettingsCard>
     </>
   );
