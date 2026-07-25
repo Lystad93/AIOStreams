@@ -5,6 +5,16 @@
 export * from './types.js';
 export * from './srt.js';
 export * from './token.js';
+export * from './match.js';
+export {
+  findExternalSubtitles,
+  getProviderClient,
+  configuredProviders,
+  type ScoredSubtitle,
+  type ExternalSubtitleCandidate,
+  type ExternalProviderId,
+} from './providers/index.js';
+export { normaliseReleaseName } from './release-name.js';
 export {
   recordServedReleases,
   lookupServedRelease,
@@ -17,6 +27,7 @@ export {
   getFinishedResult,
   precacheTranslateExact,
   markTranslatedStreams,
+  buildExternalSlots,
 } from './slots.js';
 export {
   startExactJob,

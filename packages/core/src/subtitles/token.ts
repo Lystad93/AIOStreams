@@ -24,6 +24,41 @@ export interface SubtitleTokenPayload {
   filename?: string;
 }
 
+/**
+ * Everything needed to fetch one externally-sourced subtitle on demand (spec
+ * §4.5). Encrypted like the job token, so provider download refs — which can
+ * embed an API key — never appear in a URL the player can read.
+ */
+export interface ExternalSubtitleTokenPayload {
+  provider: string;
+  /** Provider-specific download reference. */
+  ref: string;
+  /** Release we're playing, used to pick the best file out of a season pack. */
+  releaseKey?: string;
+  season?: number;
+  episode?: number;
+  lang: string;
+}
+
+export function encodeExternalToken(
+  payload: ExternalSubtitleTokenPayload
+): string | undefined {
+  const res = encryptString(JSON.stringify(payload));
+  return res.success && res.data ? res.data : undefined;
+}
+
+export function decodeExternalToken(
+  token: string
+): ExternalSubtitleTokenPayload | undefined {
+  const res = decryptString(token);
+  if (!res.success || !res.data) return undefined;
+  try {
+    return JSON.parse(res.data) as ExternalSubtitleTokenPayload;
+  } catch {
+    return undefined;
+  }
+}
+
 export function encodeSubtitleToken(
   payload: SubtitleTokenPayload
 ): string | undefined {

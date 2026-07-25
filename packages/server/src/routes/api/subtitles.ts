@@ -5,6 +5,8 @@ import {
   validateConfig,
   UserRepository,
   decodeSubtitleToken,
+  decodeExternalToken,
+  getProviderClient,
   resolveSubtitleConfig,
   lookupServedRelease,
   releaseHash,
@@ -70,6 +72,55 @@ async function loadOwnerConfig(payload: SubtitleTokenPayload) {
   return userData;
 }
 
+/**
+ * Serve an externally-sourced subtitle (spec §4.5). Registered before the
+ * generic action route because it carries its own token shape and needs no user
+ * config — the token holds the provider reference and the episode to pick out
+ * of a season pack.
+ */
+router.get(
+  '/external/:token',
+  async (req: Request<{ token: string }>, res: Response) => {
+    const token = decodeURIComponent(req.params.token).replace(/\.srt$/i, '');
+    const payload = decodeExternalToken(token);
+    if (!payload) {
+      sendSrt(res, messageSrt('AIOStreams: invalid or expired subtitle link.'));
+      return;
+    }
+    try {
+      const client = getProviderClient(
+        payload.provider as Parameters<typeof getProviderClient>[0]
+      );
+      if (!client) {
+        sendSrt(res, messageSrt('AIOStreams: unknown subtitle provider.'));
+        return;
+      }
+      const srt = await client.download(
+        {
+          provider: client.id,
+          id: payload.ref,
+          downloadRef: payload.ref,
+          lang: payload.lang,
+          releaseNames: [],
+        },
+        {
+          season: payload.season,
+          episode: payload.episode,
+          releaseKey: payload.releaseKey,
+        }
+      );
+      sendSrt(res, srt);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn(`external subtitle fetch failed: ${message}`);
+      sendSrt(
+        res,
+        messageSrt(`AIOStreams: could not fetch subtitle — ${message}`)
+      );
+    }
+  }
+);
+
 router.get(
   '/:action/:token',
   async (req: Request<{ action: string; token: string }>, res: Response) => {
@@ -116,6 +167,8 @@ router.get(
         sendSrt(res, messageSrt('AIOStreams: unknown subtitle action.'));
         return;
       }
+      // (external is handled by its own route below — it carries a different
+      // token shape and needs no user config.)
 
       // --- exact: start the job, return a placeholder ------------------------
       const userData = await loadOwnerConfig(payload);

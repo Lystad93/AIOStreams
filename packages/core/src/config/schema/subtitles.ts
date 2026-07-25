@@ -41,6 +41,36 @@ export const subtitlesSchema = {
     requiresRestart: false,
     secret: false,
   },
+  externalEnabled: {
+    schema: z.boolean(),
+    default: true,
+    label: 'Search external subtitle providers',
+    description:
+      'Look up subtitles for the exact release being played on the configured providers (SubSource, SubDL). Matches are offered alongside the extraction entry with a confidence percentage, and a good match can be translated without downloading the video at all. Needs at least one provider API key below.',
+    env: 'SUBTITLE_EXTERNAL_ENABLED',
+    requiresRestart: false,
+    secret: false,
+  },
+  subsourceApiKey: {
+    schema: z.string(),
+    default: '',
+    label: 'SubSource API key',
+    description:
+      'API key for [SubSource](https://subsource.net/api-docs). Its subtitles list every release they are synced to, which gives the most reliable matches.',
+    env: 'SUBTITLE_SUBSOURCE_API_KEY',
+    requiresRestart: false,
+    secret: true,
+  },
+  subdlApiKey: {
+    schema: z.string(),
+    default: '',
+    label: 'SubDL API key',
+    description:
+      'API key for [SubDL](https://subdl.com/panel/api). Supports searching by the exact release filename.',
+    env: 'SUBTITLE_SUBDL_API_KEY',
+    requiresRestart: false,
+    secret: true,
+  },
   reuploadTags: {
     schema: commaSeparatedList,
     default: [],

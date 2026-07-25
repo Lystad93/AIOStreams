@@ -14,7 +14,7 @@
  * language so the player treats the track correctly.
  */
 import { createLogger } from '../logging/logger.js';
-import { appConfig } from '../utils/index.js';
+import { appConfig, Cache } from '../utils/index.js';
 import type { Subtitle, UserData } from '../db/schemas.js';
 import { SubtitleJobRepository } from '../db/index.js';
 import { ExtrasParser } from '../utils/extras.js';
@@ -22,7 +22,12 @@ import { getJob, jobId, resultId, getResult, isStaleJob } from './job-store.js';
 import { lookupServedRelease, releaseHash } from './release-lookup.js';
 import { estimateEtaSeconds, startExactJob } from './pipeline.js';
 import { hasReusableSource } from './sources.js';
-import { encodeSubtitleToken } from './token.js';
+import { encodeSubtitleToken, encodeExternalToken } from './token.js';
+import { normaliseReleaseName } from './release-name.js';
+import {
+  findExternalSubtitles,
+  type ScoredSubtitle,
+} from './providers/index.js';
 import { PLAYBACK_PATH_PREFIX } from '../debrid/utils.js';
 import type { SubtitleJob, SubtitleJobKey } from './types.js';
 
@@ -40,7 +45,10 @@ function fmtEta(seconds: number): string {
   return `~${Math.round(seconds / 60)}m`;
 }
 
-function slotUrl(action: 'exact' | 'result', token: string): string {
+function slotUrl(
+  action: 'exact' | 'result' | 'external',
+  token: string
+): string {
   return `${appConfig.bootstrap.baseUrl}/api/v1/subtitles/${action}/${encodeURIComponent(
     token
   )}.srt`;
@@ -209,6 +217,87 @@ export async function buildSubtitleSlots(
     url: slotUrl('exact', token),
     lang: label,
   });
+  return slots;
+}
+
+/** Cached external lookups — the subtitle menu is re-opened constantly. */
+const externalCache = () =>
+  Cache.getInstance<string, ScoredSubtitle[]>('subtitle-external', 500);
+const EXTERNAL_TTL_SECONDS = 15 * 60;
+
+/** Parse `tt1234567:1:8` into the parts the provider APIs need. */
+function parseImdbContentId(contentId: string): {
+  imdbId?: string;
+  season?: number;
+  episode?: number;
+} {
+  const [id, season, episode] = contentId.split(':');
+  if (!id?.startsWith('tt')) return {};
+  return {
+    imdbId: id,
+    season: season ? Number(season) : undefined,
+    episode: episode ? Number(episode) : undefined,
+  };
+}
+
+/**
+ * Externally-sourced subtitles matched against the playing release (spec §4.5).
+ *
+ * Unlike the extraction slots this needs no playback URL and downloads no
+ * video, so it works even where extraction is gated off — it only needs the
+ * release filename the player echoed back.
+ */
+export async function buildExternalSlots(
+  userData: UserData,
+  contentId: string,
+  filename: string | undefined,
+  languages: string[]
+): Promise<Subtitle[]> {
+  if (!appConfig.subtitles.externalEnabled) return [];
+  if (!filename || languages.length === 0) return [];
+  const { imdbId, season, episode } = parseImdbContentId(contentId);
+  if (!imdbId) return [];
+
+  const cacheKey = `${imdbId}|${season ?? ''}|${episode ?? ''}|${normaliseReleaseName(filename)}|${languages.join(',')}`;
+  let matches = await externalCache().get(cacheKey);
+  if (matches === undefined) {
+    matches = await findExternalSubtitles({
+      imdbId,
+      season,
+      episode,
+      languages,
+      filename,
+    });
+    await externalCache().set(cacheKey, matches, EXTERNAL_TTL_SECONDS);
+  }
+
+  const slots: Subtitle[] = [];
+  for (const [i, match] of matches.entries()) {
+    const token = encodeExternalToken({
+      provider: match.candidate.provider,
+      ref: match.candidate.downloadRef,
+      releaseKey: filename,
+      season,
+      episode,
+      lang: match.candidate.lang,
+    });
+    if (!token) continue;
+    // The tier matters more than the number: an exact match is evidence, a
+    // percentage is an estimate of how well the timing should line up.
+    const label =
+      match.tier === 'exact-file'
+        ? `${match.candidate.lang} — 100% exact file`
+        : match.tier === 'exact-release'
+          ? `${match.candidate.lang} — 100% exact release`
+          : `${match.candidate.lang} — ${match.score}% match`;
+    slots.push({
+      id: `aiostreams-external-${match.candidate.provider}-${i}`,
+      url: slotUrl('external', token),
+      lang: `${label} (${match.candidate.provider}${
+        match.candidate.hearingImpaired ? ', SDH' : ''
+      })`,
+    });
+  }
   return slots;
 }
 
