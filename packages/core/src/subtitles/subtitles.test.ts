@@ -7,6 +7,8 @@ import { estimateEtaSeconds } from './pipeline.js';
 import { pickTrack } from './extract.js';
 import { reassembleTranslations } from './translate.js';
 import { isStaleJob, blocksNewAttempt } from './job-store.js';
+import { pickSource } from './sources.js';
+import type { SubtitleSourceMeta } from '../db/repositories/subtitle-sources.js';
 import type { ProbedSubtitleTrack, SubtitleJob } from './types.js';
 
 test('parseSrt: tolerates CRLF, multiline cues, and preserves timings', () => {
@@ -111,6 +113,36 @@ test('reassembleTranslations: ignores out-of-range/garbage indices, unescapes \\
   assert.equal(lines[0], 'x\ny');
   assert.equal(lines[1], 'b'); // untouched
   assert.equal(missing, 1);
+});
+
+test('pickSource: honours the user-ordered language priority, demotes forced/SDH', () => {
+  const mk = (over: Partial<SubtitleSourceMeta>): SubtitleSourceMeta =>
+    ({
+      id: over.lang! + (over.forced ? '-f' : '') + (over.hearingImpaired ? '-s' : ''),
+      filename: 'X.mkv',
+      lang: 'English',
+      origin: 'extracted',
+      forced: false,
+      hearingImpaired: false,
+      createdAt: 0,
+      ...over,
+    }) as SubtitleSourceMeta;
+
+  const pool = [
+    mk({ lang: 'English' }),
+    mk({ lang: 'Danish' }),
+    mk({ lang: 'Danish', forced: true }),
+  ];
+
+  // A Norwegian user preferring Danish over English (spec §4.4) must get Danish.
+  assert.equal(pickSource(pool, ['Danish', 'English'])?.lang, 'Danish');
+  // ...and reversing the priority order flips the choice.
+  assert.equal(pickSource(pool, ['English', 'Danish'])?.lang, 'English');
+  // The plain Danish track wins over the forced one.
+  assert.equal(pickSource(pool, ['Danish'])?.forced, false);
+  // No preference expressed → still returns something usable.
+  assert.ok(pickSource(pool, []));
+  assert.equal(pickSource([], ['English']), undefined);
 });
 
 const HOUR = 60 * 60 * 1000;

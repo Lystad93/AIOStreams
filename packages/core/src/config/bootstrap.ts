@@ -33,6 +33,7 @@ export const bootstrap = {
   systemLifecycleEnabled: Env.SYSTEM_LIFECYCLE_ENABLED,
   subtitleTranslationEnabled: Env.SUBTITLE_TRANSLATION_ENABLED,
   subtitleExtractionAllowed: Env.SUBTITLE_EXTRACTION_ALLOWED,
+  subtitleShareSources: Env.SUBTITLE_SHARE_SOURCES,
   ffmpegPath: Env.FFMPEG_PATH,
   ffprobePath: Env.FFPROBE_PATH,
 } as const;

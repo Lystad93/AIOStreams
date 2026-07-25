@@ -6,6 +6,7 @@ import { Combobox } from '../../../ui/combobox';
 import { NumberInput } from '../../../ui/number-input/number-input';
 import { TextInput } from '../../../ui/text-input/text-input';
 import { PasswordInput } from '../../../ui/password-input/password-input';
+import { SortableList } from '../../../shared/sortable-list';
 import { Alert } from '../../../ui/alert';
 import {
   AUTO_PLAY_ATTRIBUTES,
@@ -263,20 +264,49 @@ export function PlaybackBehavior() {
           label="Preferred source languages"
           multiple
           disabled={!userData.subtitleTranslation?.enabled}
-          help="In priority order: which embedded track to translate from when several exist (e.g. prefer Danish over English). Leave empty to use the first text track found."
+          help="Which embedded track to translate from when several exist (e.g. prefer Danish over English). Drag to set priority below. Leave empty to use the first text track found."
           options={SUBTITLE_LANGUAGE_OPTIONS}
           emptyMessage="No languages found"
           value={userData.subtitleTranslation?.sourceLanguages}
           onValueChange={(value) => {
-            setUserData((prev) => ({
-              ...prev,
-              subtitleTranslation: {
-                ...prev.subtitleTranslation,
-                sourceLanguages: value as string[],
-              },
-            }));
+            setUserData((prev) => {
+              const next = value as string[];
+              // Preserve the user's existing order; append only what's new, so
+              // re-opening the picker never scrambles a hand-tuned priority.
+              const previous = prev.subtitleTranslation?.sourceLanguages ?? [];
+              const kept = previous.filter((l) => next.includes(l));
+              const added = next.filter((l) => !kept.includes(l));
+              return {
+                ...prev,
+                subtitleTranslation: {
+                  ...prev.subtitleTranslation,
+                  sourceLanguages: [...kept, ...added],
+                },
+              };
+            });
           }}
         />
+        {(userData.subtitleTranslation?.sourceLanguages?.length ?? 0) > 0 && (
+          <div className="space-y-2">
+            <p className="text-sm text-[--muted]">
+              Preference order — drag to reorder. The first available language
+              is used as the translation source.
+            </p>
+            <SortableList
+              items={userData.subtitleTranslation?.sourceLanguages ?? []}
+              disabled={!userData.subtitleTranslation?.enabled}
+              onChange={(sourceLanguages) => {
+                setUserData((prev) => ({
+                  ...prev,
+                  subtitleTranslation: {
+                    ...prev.subtitleTranslation,
+                    sourceLanguages,
+                  },
+                }));
+              }}
+            />
+          </div>
+        )}
         <TextInput
           label="Model (optional)"
           disabled={!userData.subtitleTranslation?.enabled}

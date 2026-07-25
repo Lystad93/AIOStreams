@@ -69,6 +69,23 @@ export interface ProbedSubtitleTrack {
   hearingImpaired?: boolean;
 }
 
+/**
+ * Measured properties of the file a subtitle came from. All of it falls out of
+ * the ffprobe we already run, and it's what makes a subtitle reusable against
+ * OTHER releases: `durationMs` is the primary matching key (spec §4.5/§8), and
+ * `fps` decides whether cues can be reused as-is or need retiming (23.976 vs
+ * 25 PAL is the classic silent-drift failure).
+ */
+export interface ProbedMediaInfo {
+  /** Measured container duration in ms (NOT a TMDB/filename-derived runtime). */
+  durationMs?: number;
+  /** Frame rate as a decimal, e.g. 23.976. */
+  fps?: number;
+  width?: number;
+  height?: number;
+  videoCodec?: string;
+}
+
 /** Error thrown when the only embedded track(s) are bitmap-based (spec §2, §4.2). */
 export class BitmapOnlySubtitleError extends Error {
   constructor(codecs: string[]) {

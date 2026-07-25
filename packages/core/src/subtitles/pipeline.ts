@@ -8,6 +8,7 @@ import { createLogger } from '../logging/logger.js';
 import { normaliseLanguage } from '../utils/index.js';
 import { SubtitleJobRepository } from '../db/index.js';
 import { extractBestSubtitle } from './extract.js';
+import { findReusableSource, storeExtractedSource } from './sources.js';
 import { parseSrt, serializeSrt } from './srt.js';
 import {
   translateCues,
@@ -43,7 +44,10 @@ const DEFAULT_BYTES_PER_SEC = 15 * 1024 * 1024;
 export function estimateEtaSeconds(opts: {
   fileSizeBytes?: number;
   bytesPerSec?: number;
+  /** A stored source subtitle exists, so nothing has to be downloaded. */
+  reuseSource?: boolean;
 }): number {
+  if (opts.reuseSource) return TRANSLATION_SEED_SECONDS;
   const speed = opts.bytesPerSec && opts.bytesPerSec > 0
     ? opts.bytesPerSec
     : DEFAULT_BYTES_PER_SEC;
@@ -147,18 +151,56 @@ async function runExactJob(input: RunJobInput): Promise<void> {
     await mark({ status: 'running' });
     await persistMeta(job, input, 'running');
 
-    logger.info(
-      { contentId: job.contentId, target: job.targetLang },
-      'extracting subtitle for translation'
+    // Reuse an already-extracted subtitle for this release if one exists —
+    // an extraction depends only on the release, not on who wants it or which
+    // language they're translating into. A hit skips the entire download+demux.
+    const reusable = await findReusableSource(
+      input.filename,
+      input.sourceLanguages,
+      job.uuid
     );
-    const { srt, track } = await extractBestSubtitle(
-      playbackUrl,
-      input.sourceLanguages
-    );
+
+    let srt: string;
+    let sourceLang: string | undefined;
+
+    if (reusable) {
+      logger.info(
+        {
+          contentId: job.contentId,
+          lang: reusable.meta.lang,
+          origin: reusable.meta.origin,
+        },
+        'reusing stored source subtitle — skipping extraction'
+      );
+      srt = reusable.srt;
+      sourceLang = reusable.meta.lang;
+    } else {
+      logger.info(
+        { contentId: job.contentId, target: job.targetLang },
+        'extracting subtitle for translation'
+      );
+      const extracted = await extractBestSubtitle(
+        playbackUrl,
+        input.sourceLanguages
+      );
+      srt = extracted.srt;
+      sourceLang = extracted.track.language;
+      // Add it to the pool so the next user/target language reuses it.
+      await storeExtractedSource({
+        contentId: job.contentId,
+        filename: input.filename,
+        videoSize: input.videoSize,
+        srt: extracted.srt,
+        track: extracted.track,
+        media: extracted.media,
+        createdBy: job.uuid,
+        now: Date.now(),
+      });
+    }
 
     const cues = parseSrt(srt);
     if (cues.length === 0) throw new Error('Extracted subtitle had no cues');
-    await mark({ status: 'running', sourceLang: track.language });
+    await mark({ status: 'running', sourceLang });
     // Persist the extracted (pre-translation) SRT for dashboard download.
     await SubtitleJobRepository.setExtractedSrt(
       id,
@@ -166,19 +208,17 @@ async function runExactJob(input: RunJobInput): Promise<void> {
       cues.length,
       Date.now()
     ).catch(() => {});
-    await persistMeta(job, input, 'running', {
-      sourceLang: track.language,
-    });
+    await persistMeta(job, input, 'running', { sourceLang });
 
     logger.info(
-      { cues: cues.length, source: track.language, target: job.targetLang },
+      { cues: cues.length, source: sourceLang, target: job.targetLang },
       'translating subtitle'
     );
     const translated = await translateCues(
       {
         cues,
-        sourceLang: track.language
-          ? (normaliseLanguage(track.language) ?? track.language)
+        sourceLang: sourceLang
+          ? (normaliseLanguage(sourceLang) ?? sourceLang)
           : undefined,
         targetLang: input.targetLanguage,
         apiKey: input.apiKey,
@@ -192,7 +232,7 @@ async function runExactJob(input: RunJobInput): Promise<void> {
     const completedMs = Date.now();
     const durationMs = completedMs - startedMs;
     await putResult(rid, outSrt);
-    await mark({ status: 'done', resultKey: rid, sourceLang: track.language });
+    await mark({ status: 'done', resultKey: rid, sourceLang });
     await SubtitleJobRepository.setTranslatedSrt(
       id,
       outSrt,
@@ -200,7 +240,7 @@ async function runExactJob(input: RunJobInput): Promise<void> {
       durationMs
     ).catch(() => {});
     await persistMeta(job, input, 'done', {
-      sourceLang: track.language,
+      sourceLang,
       completedAt: completedMs,
     });
     logger.info(

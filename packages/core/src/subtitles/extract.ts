@@ -16,6 +16,7 @@ import { appConfig, normaliseLanguage } from '../utils/index.js';
 import {
   BitmapOnlySubtitleError,
   type ProbedSubtitleTrack,
+  type ProbedMediaInfo,
 } from './types.js';
 
 const logger = createLogger('subtitles');
@@ -47,8 +48,23 @@ interface FfprobeStream {
   index: number;
   codec_type?: string;
   codec_name?: string;
+  width?: number;
+  height?: number;
+  r_frame_rate?: string;
+  avg_frame_rate?: string;
   tags?: Record<string, string>;
   disposition?: Record<string, number>;
+}
+
+/** Parse ffprobe's rational frame rate ("24000/1001") into a decimal. */
+function parseFps(rate?: string): number | undefined {
+  if (!rate) return undefined;
+  const [num, den] = rate.split('/').map(Number);
+  if (!Number.isFinite(num) || !Number.isFinite(den) || den === 0) {
+    return undefined;
+  }
+  const fps = num / den;
+  return fps > 0 && Number.isFinite(fps) ? Math.round(fps * 1000) / 1000 : undefined;
 }
 
 function ffmpegBin(): string {
@@ -135,6 +151,19 @@ export async function probeSubtitleTracks(
   url: string,
   timeoutMs = 45_000
 ): Promise<ProbedSubtitleTrack[]> {
+  return (await probeMedia(url, timeoutMs)).tracks;
+}
+
+/**
+ * Single ffprobe pass returning both the subtitle tracks and the file's
+ * measured properties. Reads only the container header/index, not the payload,
+ * so capturing the extra metadata costs nothing beyond what the track probe
+ * already did.
+ */
+export async function probeMedia(
+  url: string,
+  timeoutMs = 45_000
+): Promise<{ tracks: ProbedSubtitleTrack[]; media: ProbedMediaInfo }> {
   const json = await run(
     ffprobeBin(),
     [
@@ -142,22 +171,41 @@ export async function probeSubtitleTracks(
       'error',
       '-print_format',
       'json',
+      '-show_format',
       '-show_streams',
-      '-select_streams',
-      's',
       url,
     ],
-    { timeoutMs, maxStdoutBytes: 4 * 1024 * 1024 }
+    { timeoutMs, maxStdoutBytes: 8 * 1024 * 1024 }
   );
-  let parsed: { streams?: FfprobeStream[] };
+  let parsed: {
+    streams?: FfprobeStream[];
+    format?: { duration?: string | number };
+  };
   try {
     parsed = JSON.parse(json);
   } catch {
     throw new Error('ffprobe returned unparseable output');
   }
-  return (parsed.streams ?? [])
+
+  const streams = parsed.streams ?? [];
+  const tracks = streams
     .filter((s) => s.codec_type === 'subtitle')
     .map(toTrack);
+
+  const video = streams.find((s) => s.codec_type === 'video');
+  const durationSec = Number(parsed.format?.duration);
+  const media: ProbedMediaInfo = {
+    durationMs:
+      Number.isFinite(durationSec) && durationSec > 0
+        ? Math.round(durationSec * 1000)
+        : undefined,
+    fps: parseFps(video?.avg_frame_rate) ?? parseFps(video?.r_frame_rate),
+    width: video?.width,
+    height: video?.height,
+    videoCodec: video?.codec_name?.toLowerCase(),
+  };
+
+  return { tracks, media };
 }
 
 /**
@@ -238,10 +286,15 @@ export async function extractTrackToSrt(
 export async function extractBestSubtitle(
   url: string,
   preferredLangs: string[]
-): Promise<{ srt: string; track: ProbedSubtitleTrack }> {
+): Promise<{
+  srt: string;
+  track: ProbedSubtitleTrack;
+  media: ProbedMediaInfo;
+}> {
   let tracks: ProbedSubtitleTrack[];
+  let media: ProbedMediaInfo;
   try {
-    tracks = await probeSubtitleTracks(url);
+    ({ tracks, media } = await probeMedia(url));
   } catch (err) {
     // ffprobe couldn't open the file at all — usually the release is
     // unavailable/dead on the backbone rather than lacking subtitles.
@@ -262,5 +315,5 @@ export async function extractBestSubtitle(
     );
   }
   const srt = await extractTrackToSrt(url, picked);
-  return { srt, track: picked };
+  return { srt, track: picked, media };
 }

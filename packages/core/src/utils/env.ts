@@ -314,6 +314,10 @@ export const Env = cleanEnv(process.env, {
     default: true,
     desc: 'Public-instance gate (spec §7): allow the full-file extraction paths (§4.2/§4.3), which download the release on the backbone. Operators of public multi-tenant instances should set this false so only correlation-only features run. Users must still supply their own translation API key.',
   }),
+  SUBTITLE_SHARE_SOURCES: bool({
+    default: true,
+    desc: 'Share extracted source subtitles across users on this instance. An extraction depends only on the release, not on who requested it or which language they wanted — sharing lets a second user (or a different target language) reuse it instead of re-downloading and re-demuxing the whole file. Set false to keep each user’s extractions private to them.',
+  }),
   FFMPEG_PATH: str({
     default: 'ffmpeg',
     desc: 'Path to the ffmpeg binary used to extract embedded subtitle tracks.',

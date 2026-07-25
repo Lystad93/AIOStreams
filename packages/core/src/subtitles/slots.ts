@@ -21,6 +21,7 @@ import { ExtrasParser } from '../utils/extras.js';
 import { getJob, jobId, resultId, getResult, isStaleJob } from './job-store.js';
 import { lookupServedRelease, releaseHash } from './release-lookup.js';
 import { estimateEtaSeconds, startExactJob } from './pipeline.js';
+import { hasReusableSource } from './sources.js';
 import { encodeSubtitleToken } from './token.js';
 import { PLAYBACK_PATH_PREFIX } from '../debrid/utils.js';
 import type { SubtitleJob, SubtitleJobKey } from './types.js';
@@ -139,7 +140,19 @@ export async function buildSubtitleSlots(
     return [];
   }
 
-  const eta = fmtEta(estimateEtaSeconds({ fileSizeBytes: served.size }));
+  // With a reusable source subtitle there's no download at all, so the job is
+  // translation-time only — don't quote a filesize-derived download ETA.
+  const canReuseSource = await hasReusableSource(
+    served.filename,
+    cfg.sourceLanguages,
+    uuid
+  );
+  const eta = fmtEta(
+    estimateEtaSeconds({
+      fileSizeBytes: served.size,
+      reuseSource: canReuseSource,
+    })
+  );
   const slots: Subtitle[] = [];
 
   // 1. Durable reuse first: if a finished translation is already stored in the

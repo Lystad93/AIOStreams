@@ -35,10 +35,18 @@ export {
 } from './job-store.js';
 export {
   probeSubtitleTracks,
+  probeMedia,
   extractBestSubtitle,
   extractTrackToSrt,
   pickTrack,
 } from './extract.js';
+export {
+  findReusableSource,
+  hasReusableSource,
+  storeExtractedSource,
+  pickSource,
+  sourceScope,
+} from './sources.js';
 export {
   translateCues,
   geminiProvider,

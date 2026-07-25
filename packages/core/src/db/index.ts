@@ -51,6 +51,13 @@ export {
   type SubtitleJobMeta,
   type SubtitleJobListRow,
 } from './repositories/subtitle-jobs.js';
+export {
+  SubtitleSourceRepository,
+  sourceId,
+  type SubtitleSource,
+  type SubtitleSourceMeta,
+  type SubtitleSourceOrigin,
+} from './repositories/subtitle-sources.js';
 export * from './schemas.js';
 
 export { sql, raw, join, SqlFragment } from './sql.js';
