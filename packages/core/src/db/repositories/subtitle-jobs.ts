@@ -185,6 +185,29 @@ export const SubtitleJobRepository = {
     return { srt: row.srt, filename: row.filename ?? undefined };
   },
 
+  /**
+   * Mark every job left mid-flight as failed. Jobs run as in-process
+   * background tasks, so any `pending`/`running` row found at startup belongs
+   * to a process that no longer exists — without this they'd show as "running"
+   * on the dashboard forever and block the file from ever being retried.
+   * Returns how many were reconciled.
+   */
+  async markInterrupted(at: number): Promise<number> {
+    const stuck = await getDb().count(
+      sql`SELECT COUNT(*) FROM subtitle_jobs WHERE status IN ('pending','running')`
+    );
+    if (stuck > 0) {
+      await getDb().exec(sql`
+        UPDATE subtitle_jobs
+        SET status = 'failed',
+            error = 'Interrupted by a server restart',
+            updated_at = ${at}
+        WHERE status IN ('pending','running')
+      `);
+    }
+    return stuck;
+  },
+
   /** Cheap check: is a finished translation stored for this job id? */
   async hasTranslated(id: string): Promise<boolean> {
     const row = await getDb().maybeOne<{ [k: string]: unknown; n: number | string }>(

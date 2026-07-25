@@ -117,3 +117,48 @@ test('subtitle_jobs: failed job stores error and no translated SRT', async () =>
   assert.equal(await SubtitleJobRepository.getSrt('job-2', 'translated'), null);
   assert.equal(await SubtitleJobRepository.hasTranslated('job-2'), false);
 });
+
+test('markInterrupted: in-flight jobs are failed at startup, terminal ones untouched', async () => {
+  const base = {
+    uuid: 'user-c',
+    contentId: 'tt7',
+    releaseHash: 'rh3',
+    sourcePath: 'exact',
+    targetLang: 'Norwegian',
+    createdAt: 3000,
+    updatedAt: 3000,
+  };
+  // Two orphans (the bug: these showed as "running" forever after a restart)
+  // plus one already-done job that must not be disturbed.
+  await SubtitleJobRepository.saveMeta({
+    ...base,
+    id: 'stuck-running',
+    status: 'running',
+  });
+  await SubtitleJobRepository.saveMeta({
+    ...base,
+    id: 'stuck-pending',
+    status: 'pending',
+  });
+  await SubtitleJobRepository.saveMeta({
+    ...base,
+    id: 'already-done',
+    status: 'done',
+    completedAt: 3500,
+  });
+
+  const n = await SubtitleJobRepository.markInterrupted(9999);
+  assert.equal(n, 2);
+
+  const byId = new Map(
+    (await SubtitleJobRepository.list()).map((r) => [r.id, r])
+  );
+  assert.equal(byId.get('stuck-running')!.status, 'failed');
+  assert.match(byId.get('stuck-running')!.error!, /restart/i);
+  assert.equal(byId.get('stuck-pending')!.status, 'failed');
+  // A completed translation must survive reconciliation untouched.
+  assert.equal(byId.get('already-done')!.status, 'done');
+
+  // Idempotent: a second boot has nothing left to reconcile.
+  assert.equal(await SubtitleJobRepository.markInterrupted(9999), 0);
+});

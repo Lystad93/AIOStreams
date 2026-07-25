@@ -69,14 +69,37 @@ export async function putJob(job: SubtitleJob): Promise<void> {
  * shared cache is single-writer per process; the small race window is
  * acceptable for this workload (worst case: one duplicate job).
  */
+/**
+ * How long a `pending`/`running` job may go without a state change before it's
+ * assumed dead. Jobs are in-process background tasks, so a crash, restart or
+ * hang leaves them stuck forever otherwise. Generous enough for a large 4K
+ * file whose extraction transits the whole file with no intermediate update.
+ */
+const STALE_JOB_MS = 2 * 60 * 60 * 1000;
+
+/** A job that claims to be in flight but hasn't progressed in a long time. */
+export function isStaleJob(job: SubtitleJob, now: number): boolean {
+  if (job.status !== 'pending' && job.status !== 'running') return false;
+  return now - (job.updatedAt ?? job.createdAt) > STALE_JOB_MS;
+}
+
+/**
+ * Treat a job as blocking a new attempt only if it's genuinely in flight or
+ * already done. A `failed` job must not block (the "Retry" slot needs a fresh
+ * attempt), and neither must a stale one — otherwise a job orphaned by a
+ * restart would make that file permanently un-translatable.
+ */
+export function blocksNewAttempt(job: SubtitleJob, now: number): boolean {
+  if (job.status === 'failed') return false;
+  if (isStaleJob(job, now)) return false;
+  return true;
+}
+
 export async function createJobIfAbsent(
   next: SubtitleJob
 ): Promise<{ job: SubtitleJob; created: boolean }> {
   const existing = await getJob(next);
-  // A pending/running/done job blocks a duplicate; a FAILED one must not — the
-  // "Retry" slot needs to start a fresh attempt (important now that the job
-  // cache is persistent and a failure survives restarts).
-  if (existing && existing.status !== 'failed') {
+  if (existing && blocksNewAttempt(existing, next.createdAt)) {
     return { job: existing, created: false };
   }
   await putJob(next);

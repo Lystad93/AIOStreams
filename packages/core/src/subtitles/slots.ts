@@ -18,7 +18,7 @@ import { appConfig } from '../utils/index.js';
 import type { Subtitle, UserData } from '../db/schemas.js';
 import { SubtitleJobRepository } from '../db/index.js';
 import { ExtrasParser } from '../utils/extras.js';
-import { getJob, jobId, resultId, getResult } from './job-store.js';
+import { getJob, jobId, resultId, getResult, isStaleJob } from './job-store.js';
 import { lookupServedRelease, releaseHash } from './release-lookup.js';
 import { estimateEtaSeconds, startExactJob } from './pipeline.js';
 import { encodeSubtitleToken } from './token.js';
@@ -156,7 +156,13 @@ export async function buildSubtitleSlots(
   }
 
   // 2. Otherwise consult the live job cache for in-flight / failed state.
-  const job = await getJob(key);
+  // A stale job (orphaned by a crash/restart) is treated as not running, so it
+  // falls through to the retry offer instead of showing "not ready" forever.
+  const found = await getJob(key);
+  const job =
+    found && isStaleJob(found, Date.now())
+      ? { ...found, status: 'failed' as const }
+      : found;
 
   if (job && (job.status === 'pending' || job.status === 'running')) {
     // Always-present "not ready" placeholder with ETA while a job is in flight.

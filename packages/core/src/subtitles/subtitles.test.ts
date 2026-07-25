@@ -6,7 +6,8 @@ import { releaseHash } from './release-lookup.js';
 import { estimateEtaSeconds } from './pipeline.js';
 import { pickTrack } from './extract.js';
 import { reassembleTranslations } from './translate.js';
-import type { ProbedSubtitleTrack } from './types.js';
+import { isStaleJob, blocksNewAttempt } from './job-store.js';
+import type { ProbedSubtitleTrack, SubtitleJob } from './types.js';
 
 test('parseSrt: tolerates CRLF, multiline cues, and preserves timings', () => {
   const input =
@@ -110,6 +111,61 @@ test('reassembleTranslations: ignores out-of-range/garbage indices, unescapes \\
   assert.equal(lines[0], 'x\ny');
   assert.equal(lines[1], 'b'); // untouched
   assert.equal(missing, 1);
+});
+
+const HOUR = 60 * 60 * 1000;
+const baseJob = (over: Partial<SubtitleJob>): SubtitleJob => ({
+  uuid: 'u',
+  contentId: 'tt1:1:1',
+  releaseHash: 'rh',
+  sourcePath: 'exact',
+  targetLang: 'Norwegian',
+  status: 'running',
+  etaSeconds: 600,
+  createdAt: 0,
+  updatedAt: 0,
+  ...over,
+});
+
+test('isStaleJob: a job orphaned by a restart is eventually considered dead', () => {
+  const now = 10 * HOUR;
+  // Running but untouched for hours → stale (the process that owned it is gone).
+  assert.equal(isStaleJob(baseJob({ updatedAt: now - 3 * HOUR }), now), true);
+  // Recently updated → genuinely in flight, not stale.
+  assert.equal(isStaleJob(baseJob({ updatedAt: now - 60_000 }), now), false);
+  // Terminal states are never "stale".
+  assert.equal(
+    isStaleJob(baseJob({ status: 'done', updatedAt: 0 }), now),
+    false
+  );
+  assert.equal(
+    isStaleJob(baseJob({ status: 'failed', updatedAt: 0 }), now),
+    false
+  );
+});
+
+test('blocksNewAttempt: stale or failed jobs must not block a retry', () => {
+  const now = 10 * HOUR;
+  // The regression this guards: a job orphaned mid-flight by a container
+  // restart previously made that file permanently un-translatable.
+  assert.equal(
+    blocksNewAttempt(baseJob({ updatedAt: now - 3 * HOUR }), now),
+    false
+  );
+  assert.equal(
+    blocksNewAttempt(baseJob({ status: 'failed', updatedAt: now }), now),
+    false
+  );
+  // A genuinely running job still de-duplicates.
+  assert.equal(
+    blocksNewAttempt(baseJob({ updatedAt: now - 60_000 }), now),
+    true
+  );
+  // A finished job blocks too — the stored result is served instead.
+  assert.equal(
+    blocksNewAttempt(baseJob({ status: 'done', updatedAt: now }), now),
+    true
+  );
 });
 
 test('estimateEtaSeconds: grows with file size, has a floor', () => {

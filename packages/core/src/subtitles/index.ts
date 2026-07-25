@@ -29,6 +29,8 @@ export {
   getResult,
   resultId,
   jobId,
+  isStaleJob,
+  blocksNewAttempt,
 } from './job-store.js';
 export {
   probeSubtitleTracks,

@@ -8,6 +8,7 @@ import {
   initialiseConfig,
   closeDb,
   UserRepository,
+  SubtitleJobRepository,
   logStartupInfo,
   Cache,
   RegexAccess,
@@ -42,6 +43,24 @@ async function initialiseDatabase() {
     if (error instanceof ConfigStartupError) throw error;
     logger.error('Failed to initialise database:', error);
     throw error;
+  }
+}
+
+/**
+ * Subtitle translation jobs run as in-process background tasks, so any job
+ * still marked in-flight at boot belongs to a process that no longer exists.
+ * Fail them so they stop showing as "running" and stop blocking retries.
+ */
+async function reconcileSubtitleJobs() {
+  try {
+    const n = await SubtitleJobRepository.markInterrupted(Date.now());
+    if (n > 0) {
+      logger.info(
+        `Marked ${n} interrupted subtitle translation job(s) as failed`
+      );
+    }
+  } catch (error) {
+    logger.error('Failed to reconcile subtitle jobs:', error);
   }
 }
 
@@ -234,6 +253,7 @@ async function initialiseAuth() {
 async function start() {
   try {
     await initialiseDatabase();
+    await reconcileSubtitleJobs();
     await initialiseTemplates();
     logStartupInfo();
     await initialiseRedis();
