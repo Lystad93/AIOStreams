@@ -153,6 +153,60 @@ test('filterTranslated: returns only ids with a stored translation', async () =>
   await SubtitleJobRepository.delete('no-srt');
 });
 
+test('findTranslatedByFilenames: matches the same release across addons, scoped per user/content/lang', async () => {
+  const FILE = 'From.S01E08.2160p.STAN.WEB-DL-Kitsune.mkv';
+  // Translated once, from addon A's copy (its own size → its own job id).
+  await SubtitleJobRepository.saveMeta({
+    id: 'addon-a',
+    uuid: 'user-e',
+    contentId: 'tt9:1:8',
+    releaseHash: 'hash-from-addon-a',
+    sourcePath: 'exact',
+    targetLang: 'Norwegian',
+    status: 'done',
+    filename: FILE,
+    videoSize: 5_605_356_873,
+    createdAt: 5000,
+    updatedAt: 5000,
+  });
+  await SubtitleJobRepository.setTranslatedSrt('addon-a', 'NOR SRT', 5100, 1000);
+
+  // Addon B serves the same release; only the filename is shared.
+  const hit = await SubtitleJobRepository.findTranslatedByFilenames(
+    'user-e',
+    'tt9:1:8',
+    'Norwegian',
+    [FILE]
+  );
+  assert.equal(hit.get(FILE), 'addon-a');
+
+  // Must not leak across user, content or target language.
+  assert.equal(
+    (
+      await SubtitleJobRepository.findTranslatedByFilenames(
+        'someone-else',
+        'tt9:1:8',
+        'Norwegian',
+        [FILE]
+      )
+    ).size,
+    0
+  );
+  assert.equal(
+    (
+      await SubtitleJobRepository.findTranslatedByFilenames(
+        'user-e',
+        'tt9:1:8',
+        'German',
+        [FILE]
+      )
+    ).size,
+    0
+  );
+
+  await SubtitleJobRepository.delete('addon-a');
+});
+
 test('markInterrupted: in-flight jobs are failed at startup, terminal ones untouched', async () => {
   const base = {
     uuid: 'user-c',

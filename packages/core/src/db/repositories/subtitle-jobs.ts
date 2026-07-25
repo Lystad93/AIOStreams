@@ -209,6 +209,42 @@ export const SubtitleJobRepository = {
   },
 
   /**
+   * Map release filename → job id, for releases that already have a stored
+   * translation for this user/content/target language.
+   *
+   * Matching on the FILENAME rather than the job id is deliberate: the job id
+   * folds in the reported file size, which different addons report
+   * inconsistently (or omit) for the very same release — so an id match misses
+   * the same file served by another addon. The filename is the release
+   * identity, so this both flags the stream correctly and lets a translation be
+   * reused instead of re-extracting the whole file.
+   */
+  async findTranslatedByFilenames(
+    uuid: string,
+    contentId: string,
+    targetLang: string,
+    filenames: string[]
+  ): Promise<Map<string, string>> {
+    if (filenames.length === 0) return new Map();
+    const rows = await getDb().query<{
+      [k: string]: unknown;
+      id: string;
+      filename: string | null;
+    }>(sql`
+      SELECT id, filename FROM subtitle_jobs
+      WHERE uuid = ${uuid}
+        AND content_id = ${contentId}
+        AND target_lang = ${targetLang}
+        AND translated_srt IS NOT NULL
+        AND LENGTH(translated_srt) > 0
+        AND filename IN (${join(filenames.map((f) => sql`${f}`))})
+    `);
+    const out = new Map<string, string>();
+    for (const r of rows) if (r.filename) out.set(r.filename, r.id);
+    return out;
+  },
+
+  /**
    * Of the given job ids, which already have a finished translation stored.
    * One query for a whole stream list (the formatter's `subtitleTranslated`
    * flag), rather than a lookup per stream.

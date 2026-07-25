@@ -96,7 +96,9 @@ router.get(
       };
 
       if (action === 'result') {
-        const srt = await getFinishedResult(jobKey);
+        // Pass the filename so a translation produced from another addon's
+        // copy of the same release still resolves.
+        const srt = await getFinishedResult(jobKey, payload.filename);
         if (srt) {
           sendSrt(res, srt);
           return;

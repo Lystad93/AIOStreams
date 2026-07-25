@@ -144,8 +144,14 @@ export async function buildSubtitleSlots(
 
   // 1. Durable reuse first: if a finished translation is already stored in the
   // DB (permanent, survives cache TTL and restarts), serve it — never re-extract
-  // or re-translate a file we've already done.
-  const durableDone = await SubtitleJobRepository.hasTranslated(jobId(key));
+  // or re-translate a file we've already done. Matches across addons too.
+  const durableDone = !!(await storedTranslationId(
+    uuid,
+    id,
+    cfg.targetLanguage,
+    served.filename,
+    key
+  ));
   if (durableDone) {
     slots.push({
       id: SLOT_ID.finished,
@@ -204,27 +210,27 @@ export async function markTranslatedStreams(
   const uuid = userData.uuid;
   if (!uuid) return;
 
-  const ids = new Map<string, (typeof streams)[number][]>();
+  // Group by filename: the same release served by two addons must both be
+  // flagged, even though their reported sizes (and so their job ids) differ.
+  const byFilename = new Map<string, (typeof streams)[number][]>();
   for (const s of streams) {
-    if (s.size == null && !s.filename) continue;
-    const id = jobId({
-      uuid,
-      contentId,
-      releaseHash: releaseHash({ size: s.size, filename: s.filename }),
-      sourcePath: 'exact',
-      targetLang: cfg.targetLanguage,
-    });
-    const bucket = ids.get(id);
+    if (!s.filename) continue;
+    const bucket = byFilename.get(s.filename);
     if (bucket) bucket.push(s);
-    else ids.set(id, [s]);
+    else byFilename.set(s.filename, [s]);
   }
-  if (ids.size === 0) return;
+  if (byFilename.size === 0) return;
 
-  const translated = await SubtitleJobRepository.filterTranslated([
-    ...ids.keys(),
-  ]);
-  for (const id of translated) {
-    for (const s of ids.get(id) ?? []) s.subtitleTranslated = true;
+  const translated = await SubtitleJobRepository.findTranslatedByFilenames(
+    uuid,
+    contentId,
+    cfg.targetLanguage,
+    [...byFilename.keys()]
+  );
+  for (const filename of translated.keys()) {
+    for (const s of byFilename.get(filename) ?? []) {
+      s.subtitleTranslated = true;
+    }
   }
 }
 
@@ -258,8 +264,18 @@ export async function precacheTranslateExact(
     targetLang: cfg.targetLanguage,
   };
 
-  // Already translated (durable) → nothing to do.
-  if (await SubtitleJobRepository.hasTranslated(jobId(key))) return;
+  // Already translated (durable, including via another addon) → nothing to do.
+  if (
+    await storedTranslationId(
+      uuid,
+      contentId,
+      cfg.targetLanguage,
+      stream.filename,
+      key
+    )
+  ) {
+    return;
+  }
 
   const job: SubtitleJob = {
     ...key,
@@ -293,9 +309,39 @@ export async function precacheTranslateExact(
   }
 }
 
+/**
+ * The job id of a stored translation for this release, if one exists.
+ *
+ * Checks the filename first so the same release served by a DIFFERENT addon
+ * resolves to the existing translation (addons report file sizes
+ * inconsistently, so the size-derived job id alone would miss it), then falls
+ * back to this request's own job id.
+ */
+async function storedTranslationId(
+  uuid: string,
+  contentId: string,
+  targetLang: string,
+  filename: string | undefined,
+  key: SubtitleJobKey
+): Promise<string | undefined> {
+  if (filename) {
+    const found = await SubtitleJobRepository.findTranslatedByFilenames(
+      uuid,
+      contentId,
+      targetLang,
+      [filename]
+    );
+    const id = found.get(filename);
+    if (id) return id;
+  }
+  const own = jobId(key);
+  return (await SubtitleJobRepository.hasTranslated(own)) ? own : undefined;
+}
+
 /** Convenience for the route: the finished SRT for this key, if one exists. */
 export async function getFinishedResult(
-  key: SubtitleJobKey
+  key: SubtitleJobKey,
+  filename?: string
 ): Promise<string | undefined> {
   const job = await getJob(key);
   if (job?.status === 'done' && job.resultKey) {
@@ -304,7 +350,16 @@ export async function getFinishedResult(
   }
   const byResultId = await getResult(resultId(key));
   if (byResultId) return byResultId;
-  // Durable fallback: the permanent DB record outlives the result cache TTL.
-  const stored = await SubtitleJobRepository.getSrt(jobId(key), 'translated');
+  // Durable fallback: the permanent DB record outlives the result cache TTL,
+  // and resolves a translation made from another addon's copy of the release.
+  const id = await storedTranslationId(
+    key.uuid,
+    key.contentId,
+    key.targetLang,
+    filename,
+    key
+  );
+  if (!id) return undefined;
+  const stored = await SubtitleJobRepository.getSrt(id, 'translated');
   return stored?.srt;
 }
