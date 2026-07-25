@@ -14,7 +14,12 @@
  * language so the player treats the track correctly.
  */
 import { createLogger } from '../logging/logger.js';
-import { appConfig, Cache } from '../utils/index.js';
+import {
+  appConfig,
+  Cache,
+  normaliseLanguage,
+  getSimpleTextHash,
+} from '../utils/index.js';
 import type { Subtitle, UserData } from '../db/schemas.js';
 import { SubtitleJobRepository } from '../db/index.js';
 import { ExtrasParser } from '../utils/extras.js';
@@ -225,6 +230,45 @@ export async function buildSubtitleSlots(
   return slots;
 }
 
+/**
+ * External-subtitle settings for a user. Deliberately usable WITHOUT the
+ * translation feature: matching a subtitle to a release needs no AI key and
+ * downloads no video, so someone who just wants a subtitle that fits gets it.
+ * Falls back to the translation settings for languages (and for `enabled`, so
+ * existing users keep the behaviour they already had).
+ */
+export function resolveExternalConfig(userData: UserData): {
+  languages: string[];
+  creds: { subsource?: string; subdl?: string };
+} | null {
+  if (!appConfig.subtitles.externalEnabled) return null;
+  const ext = userData.externalSubtitles;
+  const translation = userData.subtitleTranslation;
+  const enabled = ext?.enabled ?? translation?.enabled ?? false;
+  if (!enabled) return null;
+
+  const languages =
+    ext?.languages && ext.languages.length > 0
+      ? ext.languages
+      : [
+          ...new Set(
+            [
+              translation?.targetLanguage,
+              ...(translation?.sourceLanguages ?? []),
+            ].filter((l): l is string => !!l)
+          ),
+        ];
+  if (languages.length === 0) return null;
+
+  return {
+    languages,
+    creds: {
+      subsource: ext?.subsourceApiKey,
+      subdl: ext?.subdlApiKey,
+    },
+  };
+}
+
 /** Cached external lookups — the subtitle menu is re-opened constantly. */
 const externalCache = () =>
   Cache.getInstance<string, ScoredSubtitle[]>('subtitle-external', 500);
@@ -255,13 +299,13 @@ function parseImdbContentId(contentId: string): {
 export async function buildExternalSlots(
   userData: UserData,
   contentId: string,
-  filename: string | undefined,
-  languages: string[]
+  filename: string | undefined
 ): Promise<Subtitle[]> {
   const uuid = userData.uuid;
-  if (!uuid) return [];
-  if (!appConfig.subtitles.externalEnabled) return [];
-  if (!filename || languages.length === 0) return [];
+  if (!uuid || !filename) return [];
+  const ext = resolveExternalConfig(userData);
+  if (!ext) return [];
+  const { languages, creds } = ext;
   const { imdbId, season, episode } = parseImdbContentId(contentId);
   if (!imdbId) return [];
 
@@ -277,6 +321,7 @@ export async function buildExternalSlots(
     matches = await findExternalSubtitles(
       { imdbId, season, episode, languages, filename },
       {
+        creds,
         duration: {
           ourDurationMs,
           index: durationIndex,
@@ -288,6 +333,11 @@ export async function buildExternalSlots(
     await externalCache().set(cacheKey, matches, EXTERNAL_TTL_SECONDS);
   }
 
+  // A translate-from-external entry is only meaningful when translation is
+  // configured AND the match isn't already in the target language.
+  const translation = resolveSubtitleConfig(userData);
+  const encryptedPassword = userData.encryptedPassword;
+
   const slots: Subtitle[] = [];
   for (const [i, match] of matches.entries()) {
     const token = encodeExternalToken({
@@ -297,6 +347,12 @@ export async function buildExternalSlots(
       season,
       episode,
       lang: match.candidate.lang,
+      // Carried so the (unauthenticated) download route can use this user's own
+      // provider keys; the token is encrypted, so they aren't exposed.
+      creds:
+        creds.subsource || creds.subdl
+          ? { subsource: creds.subsource, subdl: creds.subdl }
+          : undefined,
     });
     if (!token) continue;
     // The tier matters more than the number: an exact match is evidence, a
@@ -310,15 +366,81 @@ export async function buildExternalSlots(
     // Surfaced separately from the percentage: a runtime match is independent
     // evidence that the timing lines up, even when the names look different.
     const duration = match.durationMatched ? ' · duration ✓' : '';
+    const provider = `${match.candidate.provider}${
+      match.candidate.hearingImpaired ? ', SDH' : ''
+    }`;
+
+    // 1. Use it as-is — plays immediately, costs nothing.
     slots.push({
-      id: `aiostreams-external-${match.candidate.provider}-${i}`,
+      id: `aiostreams-external-use-${match.candidate.provider}-${i}`,
       url: slotUrl('external', token),
-      lang: `${label}${duration} (${match.candidate.provider}${
-        match.candidate.hearingImpaired ? ', SDH' : ''
-      })`,
+      lang: `Use: ${label}${duration} (${provider})`,
     });
+
+    // 2. Translate it — same match, but run through the LLM into the target
+    // language. Needs no video download, so it's far cheaper than extraction.
+    const sameLanguage =
+      translation &&
+      (normaliseLanguage(match.candidate.lang) ?? match.candidate.lang) ===
+        (normaliseLanguage(translation.targetLanguage) ??
+          translation.targetLanguage);
+    if (translation && !sameLanguage && encryptedPassword) {
+      const jobToken = encodeSubtitleToken({
+        uuid,
+        encryptedPassword,
+        contentId,
+        targetLang: translation.targetLanguage,
+        sourcePath: 'external',
+        filename,
+        external: {
+          provider: match.candidate.provider,
+          ref: match.candidate.downloadRef,
+          lang: match.candidate.lang,
+          season,
+          episode,
+        },
+      });
+      if (jobToken) {
+        const key: SubtitleJobKey = {
+          uuid,
+          contentId,
+          releaseHash: externalJobHash(
+            match.candidate.provider,
+            match.candidate.downloadRef
+          ),
+          sourcePath: 'external',
+          targetLang: translation.targetLanguage,
+        };
+        const existing = await getJob(key);
+        const done =
+          existing?.status === 'done' ||
+          (await SubtitleJobRepository.hasTranslated(jobId(key)));
+        const running =
+          existing &&
+          (existing.status === 'pending' || existing.status === 'running') &&
+          !isStaleJob(existing, Date.now());
+
+        slots.push({
+          id: `aiostreams-external-translate-${match.candidate.provider}-${i}`,
+          url: slotUrl(done ? 'result' : 'exact', jobToken),
+          lang: done
+            ? `${translation.targetLanguage} (translated from ${match.candidate.lang})`
+            : running
+              ? `Translating ${match.candidate.lang} → ${translation.targetLanguage}… not ready`
+              : `Translate → ${translation.targetLanguage}: ${label}${duration} (${provider})`,
+        });
+      }
+    }
   }
   return slots;
+}
+
+/**
+ * Job identity for a translate-from-external job. Keyed on the provider entry
+ * rather than the release, since that's what determines the source text.
+ */
+export function externalJobHash(provider: string, ref: string): string {
+  return getSimpleTextHash(`external|${provider}|${ref}`);
 }
 
 /**

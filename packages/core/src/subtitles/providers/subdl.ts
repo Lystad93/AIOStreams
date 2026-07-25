@@ -11,6 +11,7 @@ import { pickFromArchive } from './subsource.js';
 import type {
   ExternalSearchQuery,
   ExternalSubtitleCandidate,
+  ProviderCredentials,
   SubtitleProviderClient,
 } from './types.js';
 
@@ -33,20 +34,20 @@ interface SdSubtitle {
   author?: string | null;
 }
 
-function apiKey(): string | undefined {
-  const key = appConfig.subtitles.subdlApiKey;
+function apiKey(creds: ProviderCredentials): string | undefined {
+  const key = creds.subdl?.trim() || appConfig.subtitles.subdlApiKey;
   return key && key.trim() ? key.trim() : undefined;
 }
 
 export const subdlClient: SubtitleProviderClient = {
   id: 'subdl',
 
-  isConfigured() {
-    return !!apiKey();
+  isConfigured(creds) {
+    return !!apiKey(creds);
   },
 
-  async search(query: ExternalSearchQuery) {
-    const key = apiKey();
+  async search(query: ExternalSearchQuery, creds: ProviderCredentials) {
+    const key = apiKey(creds);
     if (!key || !query.imdbId) return [];
 
     const buildUrl = (exactFilename?: string): URL => {

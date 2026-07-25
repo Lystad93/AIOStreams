@@ -14,12 +14,15 @@ import { matchesEpisode, scoreRelease } from '../match.js';
 import type {
   ExternalSearchQuery,
   ExternalSubtitleCandidate,
+  ProviderCredentials,
   SubtitleProviderClient,
 } from './types.js';
 
 const logger = createLogger('subtitles');
 const BASE = 'https://api.subsource.net/api/v1';
 const TIMEOUT_MS = 15_000;
+/** Cap the language fan-out so a long preference list can't storm the API. */
+const MAX_LANGUAGE_REQUESTS = 4;
 
 interface SsMovie {
   movieId: number;
@@ -38,19 +41,20 @@ interface SsSubtitle {
   files?: number | null;
 }
 
-function apiKey(): string | undefined {
-  const key = appConfig.subtitles.subsourceApiKey;
+function apiKey(creds: ProviderCredentials): string | undefined {
+  const key = creds.subsource?.trim() || appConfig.subtitles.subsourceApiKey;
   return key && key.trim() ? key.trim() : undefined;
 }
 
 async function get<T>(
   path: string,
-  params: Record<string, string>
+  params: Record<string, string>,
+  creds: ProviderCredentials
 ): Promise<T> {
   const url = new URL(`${BASE}${path}`);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   const res = await fetch(url, {
-    headers: { 'X-API-Key': apiKey() ?? '', accept: 'application/json' },
+    headers: { 'X-API-Key': apiKey(creds) ?? '', accept: 'application/json' },
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   if (!res.ok) {
@@ -62,17 +66,18 @@ async function get<T>(
 export const subsourceClient: SubtitleProviderClient = {
   id: 'subsource',
 
-  isConfigured() {
-    return !!apiKey();
+  isConfigured(creds) {
+    return !!apiKey(creds);
   },
 
-  async search(query: ExternalSearchQuery) {
+  async search(query: ExternalSearchQuery, creds: ProviderCredentials) {
     if (!query.imdbId) return [];
     // TV titles resolve to one movieId per season, so pick the right one.
-    const movies = await get<{ data?: SsMovie[] }>('/movies/search', {
-      searchType: 'imdb',
-      imdb: query.imdbId,
-    });
+    const movies = await get<{ data?: SsMovie[] }>(
+      '/movies/search',
+      { searchType: 'imdb', imdb: query.imdbId },
+      creds
+    );
     const candidatesForTitle = movies.data ?? [];
     if (candidatesForTitle.length === 0) return [];
     const movie =
@@ -81,16 +86,41 @@ export const subsourceClient: SubtitleProviderClient = {
           candidatesForTitle[0])
         : candidatesForTitle[0];
 
-    const params: Record<string, string> = {
-      movieId: String(movie.movieId),
-      limit: '30',
-    };
-    // The API filters by a single language name; ask for the top preference and
-    // let the matcher rank what comes back.
-    if (query.languages[0]) params.language = query.languages[0].toLowerCase();
+    // The API filters by ONE language per request, so fan out over the user's
+    // list — otherwise only their top preference would ever come back, and the
+    // source languages they'd accept for translation would be silently lost.
+    const languages =
+      query.languages.length > 0 ? query.languages : [undefined];
+    const pages = await Promise.all(
+      languages.slice(0, MAX_LANGUAGE_REQUESTS).map(async (lang) => {
+        const params: Record<string, string> = {
+          movieId: String(movie.movieId),
+          limit: '30',
+        };
+        if (lang) params.language = lang.toLowerCase();
+        try {
+          const subs = await get<{ data?: SsSubtitle[] }>(
+            '/subtitles',
+            params,
+            creds
+          );
+          return subs.data ?? [];
+        } catch (err) {
+          logger.debug(
+            { lang, err: err instanceof Error ? err.message : String(err) },
+            'SubSource language query failed'
+          );
+          return [];
+        }
+      })
+    );
 
-    const subs = await get<{ data?: SsSubtitle[] }>('/subtitles', params);
-    return (subs.data ?? []).map((s): ExternalSubtitleCandidate => {
+    const byId = new Map<number, SsSubtitle>();
+    for (const s of pages.flat()) {
+      if (!byId.has(s.subtitleId)) byId.set(s.subtitleId, s);
+    }
+
+    return [...byId.values()].map((s): ExternalSubtitleCandidate => {
       const fps = Number(s.framerate);
       return {
         provider: 'subsource',
@@ -110,11 +140,11 @@ export const subsourceClient: SubtitleProviderClient = {
     });
   },
 
-  async download(candidate, wantEpisode) {
+  async download(candidate, wantEpisode, creds) {
     const res = await fetch(
       `${BASE}/subtitles/${encodeURIComponent(candidate.downloadRef)}/download`,
       {
-        headers: { 'X-API-Key': apiKey() ?? '' },
+        headers: { 'X-API-Key': apiKey(creds) ?? '' },
         signal: AbortSignal.timeout(TIMEOUT_MS * 2),
       }
     );

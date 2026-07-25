@@ -5,7 +5,12 @@
  * can run where full extraction is gated off.
  */
 import { createLogger } from '../../logging/logger.js';
-import { appConfig, normaliseLanguage } from '../../utils/index.js';
+import {
+  appConfig,
+  normaliseLanguage,
+  Cache,
+  getSimpleTextHash,
+} from '../../utils/index.js';
 import { scoreRelease, durationsMatch, type MatchTier } from '../match.js';
 import { normaliseReleaseName } from '../release-name.js';
 import type { ReleaseDurationIndex } from '../release-lookup.js';
@@ -15,6 +20,7 @@ import type {
   ExternalSearchQuery,
   ExternalSubtitleCandidate,
   ExternalProviderId,
+  ProviderCredentials,
   SubtitleProviderClient,
 } from './types.js';
 
@@ -48,10 +54,12 @@ export function getProviderClient(
   return CLIENTS.find((c) => c.id === id);
 }
 
-/** Providers that are switched on and have a key. */
-export function configuredProviders(): SubtitleProviderClient[] {
+/** Providers that are switched on and have a key (per-user or instance). */
+export function configuredProviders(
+  creds: ProviderCredentials = {}
+): SubtitleProviderClient[] {
   if (!appConfig.subtitles.externalEnabled) return [];
-  return CLIENTS.filter((c) => c.isConfigured());
+  return CLIENTS.filter((c) => c.isConfigured(creds));
 }
 
 /**
@@ -65,9 +73,11 @@ export async function findExternalSubtitles(
     minScore?: number;
     limit?: number;
     duration?: DurationContext;
+    creds?: ProviderCredentials;
   } = {}
 ): Promise<ScoredSubtitle[]> {
-  const clients = configuredProviders();
+  const creds = opts.creds ?? {};
+  const clients = configuredProviders(creds);
   if (clients.length === 0) return [];
 
   // Results are already constrained to the right title/season/episode by the
@@ -82,7 +92,7 @@ export async function findExternalSubtitles(
   const results = await Promise.all(
     clients.map(async (client) => {
       try {
-        return await client.search(query);
+        return await client.search(query, creds);
       } catch (err) {
         logger.debug(
           {
@@ -180,6 +190,83 @@ export async function findExternalSubtitles(
     'external subtitle search complete'
   );
   return deduped;
+}
+
+/**
+ * Downloaded external subtitle bodies, bounded by count.
+ *
+ * Deliberately its own store: extracted and translated subtitles live
+ * permanently in the `subtitle_sources` / `subtitle_jobs` tables because they
+ * cost a full file transit and an LLM call to produce. These are cheap to
+ * re-fetch, so they're the ones allowed to be evicted under pressure.
+ */
+const fileCache = () =>
+  Cache.getInstance<string, string>(
+    'subtitle-external-files',
+    () => appConfig.subtitles.externalCacheSize
+  );
+/** Long-lived: eviction is by count, not age. */
+const FILE_TTL_SECONDS = 30 * 24 * 60 * 60;
+
+/**
+ * Fetch one external subtitle, reusing the cached body when we've already
+ * pulled it. Keyed by everything that changes the output, including the episode
+ * picked out of a season pack.
+ */
+export async function downloadExternalSubtitle(args: {
+  provider: ExternalProviderId;
+  ref: string;
+  lang: string;
+  season?: number;
+  episode?: number;
+  releaseKey?: string;
+  creds?: ProviderCredentials;
+}): Promise<string> {
+  const client = getProviderClient(args.provider);
+  if (!client) throw new Error(`Unknown subtitle provider: ${args.provider}`);
+
+  const cacheKey = getSimpleTextHash(
+    [
+      args.provider,
+      args.ref,
+      args.season ?? '',
+      args.episode ?? '',
+      args.releaseKey ?? '',
+    ]
+      .map((v) => encodeURIComponent(String(v)))
+      .join('|')
+  );
+
+  const caching = appConfig.subtitles.externalCacheSize > 0;
+  if (caching) {
+    const hit = await fileCache().get(cacheKey);
+    if (hit) {
+      logger.debug(
+        { provider: args.provider },
+        'served external subtitle from cache'
+      );
+      return hit;
+    }
+  }
+
+  const srt = await client.download(
+    {
+      provider: client.id,
+      id: args.ref,
+      downloadRef: args.ref,
+      lang: args.lang,
+      releaseNames: [],
+    },
+    {
+      season: args.season,
+      episode: args.episode,
+      releaseKey: args.releaseKey,
+    },
+    args.creds ?? {}
+  );
+
+  if (caching) await fileCache().set(cacheKey, srt, FILE_TTL_SECONDS);
+  return srt;
 }
 
 export { subsourceClient, subdlClient };

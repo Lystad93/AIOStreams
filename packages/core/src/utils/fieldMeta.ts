@@ -219,6 +219,7 @@ export const FIELD_META: Omit<Record<keyof UserData, FieldMeta>, IgnoredKeys> = 
   usePosterServiceForMeta: { label: 'Use Poster Service for Meta', group: 'metadata', type: 'scalar', menu: 'services', subTab: 'posters' },
 
   autoPlay: { label: 'Auto Play', group: 'misc', type: 'scalar', menu: 'miscellaneous', subTab: 'playback' },
+  externalSubtitles: { label: 'External Subtitles', group: 'misc', type: 'scalar', menu: 'miscellaneous', subTab: 'playback', keywords: ['subtitle', 'external', 'subsource', 'subdl', 'match'] },
   subtitleTranslation: { label: 'Subtitle Translation', group: 'misc', type: 'scalar', menu: 'miscellaneous', subTab: 'playback', keywords: ['subtitle', 'translate', 'translation', 'gemini', 'ai'] },
   areYouStillThere: { label: 'Are You Still There?', group: 'misc', type: 'scalar', menu: 'miscellaneous', subTab: 'playback' },
   statistics: { label: 'Statistics', group: 'misc', type: 'scalar', menu: 'miscellaneous', subTab: 'display' },

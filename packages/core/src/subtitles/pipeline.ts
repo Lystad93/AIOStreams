@@ -9,6 +9,11 @@ import { normaliseLanguage } from '../utils/index.js';
 import { SubtitleJobRepository } from '../db/index.js';
 import { extractBestSubtitle } from './extract.js';
 import { findReusableSource, storeExtractedSource } from './sources.js';
+import { downloadExternalSubtitle } from './providers/index.js';
+import type {
+  ExternalProviderId,
+  ProviderCredentials,
+} from './providers/types.js';
 import { parseSrt, serializeSrt } from './srt.js';
 import {
   translateCues,
@@ -58,8 +63,24 @@ export function estimateEtaSeconds(opts: {
 
 export interface RunJobInput {
   job: SubtitleJob;
-  /** Range-capable play URL of the exact release (from release-lookup). */
-  playbackUrl: string;
+  /**
+   * Range-capable play URL of the exact release (from release-lookup). Not
+   * needed when `externalSource` is set — that path never touches the video.
+   */
+  playbackUrl?: string;
+  /**
+   * Translate an externally-sourced subtitle instead of extracting one. This
+   * is the cheap path: no file transit, just a small download and the LLM call.
+   */
+  externalSource?: {
+    provider: ExternalProviderId;
+    ref: string;
+    lang: string;
+    season?: number;
+    episode?: number;
+    releaseKey?: string;
+    creds?: ProviderCredentials;
+  };
   /** Ordered preferred source languages for track selection (§4.4). */
   sourceLanguages: string[];
   targetLanguage: string;
@@ -152,6 +173,34 @@ async function runExactJob(input: RunJobInput): Promise<void> {
     await mark({ status: 'running' });
     await persistMeta(job, input, 'running');
 
+    let srt: string;
+    let sourceLang: string | undefined;
+
+    if (input.externalSource) {
+      // Externally-sourced: nothing to extract, so the job is just the
+      // translation. This is what makes a matched subtitle cheap to translate.
+      logger.info(
+        {
+          contentId: job.contentId,
+          provider: input.externalSource.provider,
+          lang: input.externalSource.lang,
+        },
+        'translating externally-sourced subtitle — no extraction needed'
+      );
+      srt = await downloadExternalSubtitle(input.externalSource);
+      sourceLang = input.externalSource.lang;
+      return await finishTranslation({
+        input,
+        id,
+        job,
+        srt,
+        sourceLang,
+        provider,
+        mark,
+        startedMs,
+      });
+    }
+
     // Reuse an already-extracted subtitle for this release if one exists —
     // an extraction depends only on the release, not on who wants it or which
     // language they're translating into. A hit skips the entire download+demux.
@@ -161,9 +210,6 @@ async function runExactJob(input: RunJobInput): Promise<void> {
       job.uuid,
       { contentId: job.contentId, durationMs: input.durationMs }
     );
-
-    let srt: string;
-    let sourceLang: string | undefined;
 
     if (reusable) {
       logger.info(
@@ -181,6 +227,9 @@ async function runExactJob(input: RunJobInput): Promise<void> {
         { contentId: job.contentId, target: job.targetLang },
         'extracting subtitle for translation'
       );
+      if (!playbackUrl) {
+        throw new Error('No playback URL available to extract from');
+      }
       const extracted = await extractBestSubtitle(
         playbackUrl,
         input.sourceLanguages
@@ -200,59 +249,16 @@ async function runExactJob(input: RunJobInput): Promise<void> {
       });
     }
 
-    const cues = parseSrt(srt);
-    if (cues.length === 0) throw new Error('Extracted subtitle had no cues');
-    await mark({ status: 'running', sourceLang });
-    // Persist the extracted (pre-translation) SRT for dashboard download.
-    await SubtitleJobRepository.setExtractedSrt(
+    await finishTranslation({
+      input,
       id,
+      job,
       srt,
-      cues.length,
-      Date.now()
-    ).catch(() => {});
-    await persistMeta(job, input, 'running', { sourceLang });
-
-    logger.info(
-      { cues: cues.length, source: sourceLang, target: job.targetLang },
-      'translating subtitle'
-    );
-    const translated = await translateCues(
-      {
-        cues,
-        sourceLang: sourceLang
-          ? (normaliseLanguage(sourceLang) ?? sourceLang)
-          : undefined,
-        targetLang: input.targetLanguage,
-        apiKey: input.apiKey,
-        model: input.model,
-      },
-      provider
-    );
-
-    const outSrt = serializeSrt(translated);
-    const rid = resultId(job);
-    const completedMs = Date.now();
-    const durationMs = completedMs - startedMs;
-    await putResult(rid, outSrt);
-    await mark({ status: 'done', resultKey: rid, sourceLang });
-    await SubtitleJobRepository.setTranslatedSrt(
-      id,
-      outSrt,
-      completedMs,
-      durationMs
-    ).catch(() => {});
-    await persistMeta(job, input, 'done', {
       sourceLang,
-      completedAt: completedMs,
+      provider,
+      mark,
+      startedMs,
     });
-    logger.info(
-      {
-        contentId: job.contentId,
-        target: job.targetLang,
-        durationMs,
-      },
-      'subtitle translation complete'
-    );
   } catch (err) {
     const message =
       err instanceof BitmapOnlySubtitleError
@@ -264,4 +270,73 @@ async function runExactJob(input: RunJobInput): Promise<void> {
     await mark({ status: 'failed', error: message });
     await persistMeta(job, input, 'failed', { error: message });
   }
+}
+
+/**
+ * Shared tail of every job: translate the source cues and store the result.
+ * Both paths converge here — the only difference between them is how the source
+ * subtitle was obtained (demuxed from the video, reused from the pool, or
+ * downloaded from a provider).
+ */
+async function finishTranslation(args: {
+  input: RunJobInput;
+  id: string;
+  job: SubtitleJob;
+  srt: string;
+  sourceLang: string | undefined;
+  provider: TranslationProvider;
+  mark: (patch: Partial<SubtitleJob>) => Promise<void>;
+  startedMs: number;
+}): Promise<void> {
+  const { input, id, job, srt, sourceLang, provider, mark, startedMs } = args;
+
+  const cues = parseSrt(srt);
+  if (cues.length === 0) throw new Error('Source subtitle had no cues');
+  await mark({ status: 'running', sourceLang });
+  // Keep the untranslated source for dashboard download/inspection.
+  await SubtitleJobRepository.setExtractedSrt(
+    id,
+    srt,
+    cues.length,
+    Date.now()
+  ).catch(() => {});
+  await persistMeta(job, input, 'running', { sourceLang });
+
+  logger.info(
+    { cues: cues.length, source: sourceLang, target: job.targetLang },
+    'translating subtitle'
+  );
+  const translated = await translateCues(
+    {
+      cues,
+      sourceLang: sourceLang
+        ? (normaliseLanguage(sourceLang) ?? sourceLang)
+        : undefined,
+      targetLang: input.targetLanguage,
+      apiKey: input.apiKey,
+      model: input.model,
+    },
+    provider
+  );
+
+  const outSrt = serializeSrt(translated);
+  const rid = resultId(job);
+  const completedMs = Date.now();
+  const durationMs = completedMs - startedMs;
+  await putResult(rid, outSrt);
+  await mark({ status: 'done', resultKey: rid, sourceLang });
+  await SubtitleJobRepository.setTranslatedSrt(
+    id,
+    outSrt,
+    completedMs,
+    durationMs
+  ).catch(() => {});
+  await persistMeta(job, input, 'done', {
+    sourceLang,
+    completedAt: completedMs,
+  });
+  logger.info(
+    { contentId: job.contentId, target: job.targetLang, durationMs },
+    'subtitle translation complete'
+  );
 }

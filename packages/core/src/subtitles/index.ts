@@ -8,6 +8,7 @@ export * from './token.js';
 export * from './match.js';
 export {
   findExternalSubtitles,
+  downloadExternalSubtitle,
   getProviderClient,
   configuredProviders,
   type ScoredSubtitle,
@@ -28,6 +29,8 @@ export {
   precacheTranslateExact,
   markTranslatedStreams,
   buildExternalSlots,
+  resolveExternalConfig,
+  externalJobHash,
 } from './slots.js';
 export {
   startExactJob,

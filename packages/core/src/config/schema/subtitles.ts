@@ -71,6 +71,16 @@ export const subtitlesSchema = {
     requiresRestart: false,
     secret: true,
   },
+  externalCacheSize: {
+    schema: nonNegativeInt,
+    default: 500,
+    label: 'External subtitle cache size',
+    description:
+      'How many downloaded external subtitle files to keep, so re-selecting one does not re-download and re-unpack it. This cache is entirely separate from extracted and translated subtitles — those are stored permanently in the database and are never evicted by this limit. Set 0 to disable caching.',
+    env: 'SUBTITLE_EXTERNAL_CACHE_SIZE',
+    requiresRestart: true,
+    secret: false,
+  },
   durationToleranceSeconds: {
     schema: nonNegativeInt,
     default: 60,

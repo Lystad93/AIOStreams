@@ -41,17 +41,32 @@ export interface ExternalSubtitleCandidate {
   downloadRef: string;
 }
 
+/**
+ * API keys in effect for one request. A user may supply their own; otherwise
+ * the instance-wide keys apply, so a self-hoster configures them once.
+ */
+export interface ProviderCredentials {
+  subsource?: string;
+  subdl?: string;
+}
+
 export interface SubtitleProviderClient {
   readonly id: ExternalProviderId;
-  /** False when no API key is configured; the provider is then skipped. */
-  isConfigured(): boolean;
-  search(query: ExternalSearchQuery): Promise<ExternalSubtitleCandidate[]>;
+  /** False when no API key is available; the provider is then skipped. */
+  isConfigured(creds: ProviderCredentials): boolean;
+  search(
+    query: ExternalSearchQuery,
+    creds: ProviderCredentials
+  ): Promise<ExternalSubtitleCandidate[]>;
   /**
    * Fetch the subtitle body as SRT text. `wantEpisode` lets a season pack
    * resolve to the right file inside the archive.
    */
   download(
     candidate: ExternalSubtitleCandidate,
-    wantEpisode?: { season?: number; episode?: number; releaseKey?: string }
+    wantEpisode:
+      | { season?: number; episode?: number; releaseKey?: string }
+      | undefined,
+    creds: ProviderCredentials
   ): Promise<string>;
 }

@@ -1204,25 +1204,15 @@ export async function getSubtitles(
   // Independent of the extraction slots above: this downloads no video, so it
   // still runs where extraction is gated off or the release isn't ours.
   try {
-    const cfg = ctx.userData.subtitleTranslation;
-    // The user's language preferences come from their translation settings:
-    // what they want to read, then what they'd accept as a translation source.
-    const languages = [
-      ...new Set(
-        [cfg?.targetLanguage, ...(cfg?.sourceLanguages ?? [])].filter(
-          (l): l is string => !!l
-        )
-      ),
-    ];
-    if (cfg?.enabled && languages.length > 0) {
-      const external = await buildExternalSlots(
-        ctx.userData,
-        id,
-        new ExtrasParser(extras).filename,
-        languages
-      );
-      if (external.length > 0) allSubtitles.push(...external);
-    }
+    // Gating and language selection live in resolveExternalConfig: this works
+    // without the translation feature, since matching a subtitle to a release
+    // needs no AI key and downloads no video.
+    const external = await buildExternalSlots(
+      ctx.userData,
+      id,
+      new ExtrasParser(extras).filename
+    );
+    if (external.length > 0) allSubtitles.push(...external);
   } catch (error) {
     logger.debug(
       { error: error instanceof Error ? error.message : String(error) },

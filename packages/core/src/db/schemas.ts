@@ -805,6 +805,20 @@ export const UserDataSchema = z.object({
       precacheNextEpisode: z.boolean().optional(),
     })
     .optional(),
+  // Matching subtitles from external providers (spec §4.5). Deliberately
+  // separate from `subtitleTranslation`: this downloads no video and needs no
+  // AI key, so it is useful on its own to someone who just wants a subtitle
+  // that fits the release they're playing.
+  externalSubtitles: z
+    .object({
+      enabled: z.boolean().optional(),
+      /** Languages to look for, in priority order. */
+      languages: z.array(z.string().min(1)).optional(),
+      /** Per-user keys; fall back to the instance-wide ones when unset. */
+      subsourceApiKey: z.string().optional(),
+      subdlApiKey: z.string().optional(),
+    })
+    .optional(),
   autoPlay: z
     .object({
       enabled: z.boolean().optional(),

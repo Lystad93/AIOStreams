@@ -178,6 +178,119 @@ export function PlaybackBehavior() {
       </SettingsCard>
 
       <SettingsCard
+        title="External Subtitles"
+        id="externalSubtitles"
+        description={
+          <div className="space-y-2">
+            <p>
+              Search subtitle providers for the exact release you're playing and
+              offer the closest matches, each labelled with how well it matches.
+              This downloads no video and needs no AI key — it works on its own.
+            </p>
+            <Alert intent="info-basic">
+              <p className="text-sm">
+                Two entries appear per match: <strong>Use</strong> plays the
+                subtitle as-is, and <strong>Translate</strong> (when Subtitle
+                Translation below is configured) runs it through your AI
+                provider into your target language — far cheaper than extracting
+                from the video, since only a small subtitle file is fetched.
+              </p>
+            </Alert>
+          </div>
+        }
+      >
+        <Switch
+          label="Enable"
+          side="right"
+          help="When off, no external subtitle entries are offered."
+          value={
+            userData.externalSubtitles?.enabled ??
+            userData.subtitleTranslation?.enabled ??
+            false
+          }
+          onValueChange={(value) => {
+            setUserData((prev) => ({
+              ...prev,
+              externalSubtitles: { ...prev.externalSubtitles, enabled: value },
+            }));
+          }}
+        />
+        <Combobox
+          label="Languages"
+          multiple
+          disabled={!userData.externalSubtitles?.enabled}
+          help="Which subtitle languages to look for. Leave empty to reuse the translation languages below (target first, then your source languages)."
+          options={SUBTITLE_LANGUAGE_OPTIONS}
+          emptyMessage="No languages found"
+          value={userData.externalSubtitles?.languages}
+          onValueChange={(value) => {
+            setUserData((prev) => {
+              const next = value as string[];
+              const previous = prev.externalSubtitles?.languages ?? [];
+              const kept = previous.filter((l) => next.includes(l));
+              const added = next.filter((l) => !kept.includes(l));
+              return {
+                ...prev,
+                externalSubtitles: {
+                  ...prev.externalSubtitles,
+                  languages: [...kept, ...added],
+                },
+              };
+            });
+          }}
+        />
+        {(userData.externalSubtitles?.languages?.length ?? 0) > 0 && (
+          <div className="space-y-2">
+            <p className="text-sm text-[--muted]">
+              Priority order — drag to reorder.
+            </p>
+            <SortableList
+              items={userData.externalSubtitles?.languages ?? []}
+              disabled={!userData.externalSubtitles?.enabled}
+              onChange={(languages) => {
+                setUserData((prev) => ({
+                  ...prev,
+                  externalSubtitles: { ...prev.externalSubtitles, languages },
+                }));
+              }}
+            />
+          </div>
+        )}
+        <PasswordInput
+          label="SubSource API key (optional)"
+          autoComplete="off"
+          disabled={!userData.externalSubtitles?.enabled}
+          help="Your own key. Leave blank to use the one configured by this instance's owner."
+          value={userData.externalSubtitles?.subsourceApiKey ?? ''}
+          onValueChange={(value) => {
+            setUserData((prev) => ({
+              ...prev,
+              externalSubtitles: {
+                ...prev.externalSubtitles,
+                subsourceApiKey: value || undefined,
+              },
+            }));
+          }}
+        />
+        <PasswordInput
+          label="SubDL API key (optional)"
+          autoComplete="off"
+          disabled={!userData.externalSubtitles?.enabled}
+          help="Your own key. Leave blank to use the one configured by this instance's owner."
+          value={userData.externalSubtitles?.subdlApiKey ?? ''}
+          onValueChange={(value) => {
+            setUserData((prev) => ({
+              ...prev,
+              externalSubtitles: {
+                ...prev.externalSubtitles,
+                subdlApiKey: value || undefined,
+              },
+            }));
+          }}
+        />
+      </SettingsCard>
+
+      <SettingsCard
         title="Subtitle Translation"
         id="subtitleTranslation"
         description={

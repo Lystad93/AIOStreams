@@ -7,6 +7,9 @@ import {
   decodeSubtitleToken,
   decodeExternalToken,
   getProviderClient,
+  downloadExternalSubtitle,
+  resolveExternalConfig,
+  externalJobHash,
   resolveSubtitleConfig,
   lookupServedRelease,
   releaseHash,
@@ -95,20 +98,15 @@ router.get(
         sendSrt(res, messageSrt('AIOStreams: unknown subtitle provider.'));
         return;
       }
-      const srt = await client.download(
-        {
-          provider: client.id,
-          id: payload.ref,
-          downloadRef: payload.ref,
-          lang: payload.lang,
-          releaseNames: [],
-        },
-        {
-          season: payload.season,
-          episode: payload.episode,
-          releaseKey: payload.releaseKey,
-        }
-      );
+      const srt = await downloadExternalSubtitle({
+        provider: client.id,
+        ref: payload.ref,
+        lang: payload.lang,
+        season: payload.season,
+        episode: payload.episode,
+        releaseKey: payload.releaseKey,
+        creds: payload.creds,
+      });
       sendSrt(res, srt);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -185,6 +183,63 @@ router.get(
           res,
           messageSrt(
             'AIOStreams: subtitle translation is not fully configured (API key / target language).'
+          )
+        );
+        return;
+      }
+
+      // Translating an externally-sourced subtitle needs no video at all, so
+      // it skips the playback lookup and the extraction entirely.
+      if (payload.sourcePath === 'external' && payload.external) {
+        const now = Date.now();
+        const key: SubtitleJobKey = {
+          uuid: payload.uuid,
+          contentId: payload.contentId,
+          releaseHash: externalJobHash(
+            payload.external.provider,
+            payload.external.ref
+          ),
+          sourcePath: 'external',
+          targetLang: payload.targetLang,
+        };
+        const { started } = await startExactJob({
+          job: {
+            ...key,
+            status: 'pending',
+            // No file transit — the job is just the translation.
+            etaSeconds: estimateEtaSeconds({ reuseSource: true }),
+            createdAt: now,
+            updatedAt: now,
+            filename: payload.filename,
+            provider: cfg.provider,
+            model: cfg.model,
+          },
+          externalSource: {
+            provider: payload.external.provider as Parameters<
+              typeof getProviderClient
+            >[0],
+            ref: payload.external.ref,
+            lang: payload.external.lang,
+            season: payload.external.season,
+            episode: payload.external.episode,
+            releaseKey: payload.filename,
+            creds: resolveExternalConfig(userData)?.creds,
+          },
+          sourceLanguages: cfg.sourceLanguages,
+          targetLanguage: cfg.targetLanguage,
+          apiKey: cfg.apiKey,
+          providerId: cfg.provider,
+          model: cfg.model,
+          filename: payload.filename,
+          now,
+        });
+        sendSrt(
+          res,
+          messageSrt(
+            started
+              ? `AIOStreams: translating the matched ${payload.external.lang} subtitle into ${payload.targetLang}. Re-open the subtitle menu shortly.`
+              : 'AIOStreams: translation already in progress. Re-open the subtitle menu shortly.',
+            30
           )
         );
         return;

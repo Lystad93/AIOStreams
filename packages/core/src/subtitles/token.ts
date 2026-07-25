@@ -22,6 +22,17 @@ export interface SubtitleTokenPayload {
   sourcePath: SubtitleSourcePath;
   videoSize?: number;
   filename?: string;
+  /**
+   * Present when the job should translate an externally-sourced subtitle
+   * instead of extracting one from the video.
+   */
+  external?: {
+    provider: string;
+    ref: string;
+    lang: string;
+    season?: number;
+    episode?: number;
+  };
 }
 
 /**
@@ -38,6 +49,8 @@ export interface ExternalSubtitleTokenPayload {
   season?: number;
   episode?: number;
   lang: string;
+  /** Per-user provider keys, when they differ from the instance ones. */
+  creds?: { subsource?: string; subdl?: string };
 }
 
 export function encodeExternalToken(
