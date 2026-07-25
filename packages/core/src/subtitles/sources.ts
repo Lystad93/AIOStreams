@@ -66,13 +66,11 @@ export function pickSource(
 export async function findReusableSource(
   filename: string | undefined,
   preferredLangs: string[],
-  uuid: string
+  uuid: string,
+  runtime?: { contentId: string; durationMs?: number }
 ): Promise<{ srt: string; meta: SubtitleSourceMeta } | undefined> {
   if (!filename) return undefined;
-  const sources = await SubtitleSourceRepository.findByFilename(
-    filename,
-    sourceScope(uuid)
-  );
+  const sources = await collectCandidateSources(filename, uuid, runtime);
   const best = pickSource(sources, preferredLangs);
   if (!best) return undefined;
   const srt = await SubtitleSourceRepository.getSrt(best.id);
@@ -88,14 +86,60 @@ export async function findReusableSource(
 export async function hasReusableSource(
   filename: string | undefined,
   preferredLangs: string[],
-  uuid: string
+  uuid: string,
+  runtime?: { contentId: string; durationMs?: number }
 ): Promise<boolean> {
   if (!filename) return false;
-  const sources = await SubtitleSourceRepository.findByFilename(
-    filename,
-    sourceScope(uuid)
-  );
+  const sources = await collectCandidateSources(filename, uuid, runtime);
   return !!pickSource(sources, preferredLangs);
+}
+
+/**
+ * Stored sources usable for this release: the ones extracted from this exact
+ * release, plus — when we know how long it runs — any whose measured runtime
+ * agrees. Runtime agreement is what makes a subtitle from a cosmetically
+ * different release (extra `HDR` token, different encode, 60fps remux) valid,
+ * and reusing one there avoids re-downloading the whole file.
+ */
+async function collectCandidateSources(
+  filename: string,
+  uuid: string,
+  runtime?: { contentId: string; durationMs?: number }
+): Promise<SubtitleSourceMeta[]> {
+  const scope = sourceScope(uuid);
+  const exact = await SubtitleSourceRepository.findByFilename(filename, scope);
+  if (!runtime?.durationMs) return exact;
+
+  const toleranceMs = Math.max(
+    appConfig.subtitles.durationToleranceSeconds * 1000,
+    (runtime.durationMs * appConfig.subtitles.durationTolerancePercent) / 100
+  );
+  const byDuration = await SubtitleSourceRepository.findByDuration(
+    runtime.contentId,
+    runtime.durationMs,
+    toleranceMs,
+    scope
+  );
+
+  const seen = new Set(exact.map((s) => s.id));
+  const merged = [...exact];
+  for (const s of byDuration) {
+    if (!seen.has(s.id)) {
+      seen.add(s.id);
+      merged.push(s);
+    }
+  }
+  if (merged.length > exact.length) {
+    logger.debug(
+      {
+        filename,
+        durationMs: runtime.durationMs,
+        extra: merged.length - exact.length,
+      },
+      'found additional source subtitles by matching runtime'
+    );
+  }
+  return merged;
 }
 
 /**

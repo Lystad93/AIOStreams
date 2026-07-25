@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { scoreRelease, matchesEpisode } from './match.js';
+import { scoreRelease, matchesEpisode, durationsMatch } from './match.js';
 import { readZipEntries, subtitleEntries } from './providers/zip.js';
 import { deflateRawSync, crc32 } from 'node:zlib';
 
@@ -61,6 +61,59 @@ test('matchesEpisode: recognises SxxExx and NxN, rejects neighbours', () => {
   assert.ok(!matchesEpisode('From.S01E80.srt', want));
   // With no episode wanted, everything matches.
   assert.ok(matchesEpisode('anything.srt', {}));
+});
+
+const TOL = { toleranceSeconds: 60, tolerancePercent: 0.5 };
+
+test('durationsMatch: identical runtimes match, unknown runtimes never do', () => {
+  const twoHours = 2 * 60 * 60 * 1000;
+  assert.ok(durationsMatch(twoHours, twoHours, TOL));
+  // 0 / undefined mean "not reported" — never treat that as agreement.
+  assert.ok(!durationsMatch(twoHours, 0, TOL));
+  assert.ok(!durationsMatch(0, 0, TOL));
+  assert.ok(!durationsMatch(twoHours, undefined, TOL));
+  assert.ok(!durationsMatch(undefined, undefined, TOL));
+});
+
+test('durationsMatch: absorbs minute-level rounding but not a different cut', () => {
+  const base = 102 * 60 * 1000; // 1h42m
+  // Addon descriptions are minute-granular, so a 1-minute disagreement between
+  // two reports of the same film must still match.
+  assert.ok(durationsMatch(base, base + 60_000, TOL));
+  // A theatrical vs extended cut differs by far more and must NOT match.
+  assert.ok(!durationsMatch(base, base + 20 * 60_000, TOL));
+});
+
+test('durationsMatch: percentage term takes over for long runtimes', () => {
+  const fourHours = 4 * 60 * 60 * 1000;
+  // 0.5% of 4h = 72s, which is wider than the 60s floor.
+  assert.ok(durationsMatch(fourHours, fourHours + 70_000, TOL));
+  assert.ok(!durationsMatch(fourHours, fourHours + 200_000, TOL));
+});
+
+test('scoreRelease: the real-world HDR-token case scores partial by name alone', () => {
+  // These two differ only by an `HDR` token but are genuinely different files;
+  // the name score is honest about that, which is why duration is needed as a
+  // separate signal.
+  const r = scoreRelease(
+    'Backrooms.2026.2160p.iT.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-BYNDR',
+    ['Backrooms.2026.2160p.iT.WEB-DL.DDP5.1.Atmos.DV.H.265-BYNDR']
+  );
+  assert.equal(r.tier, 'similar');
+  assert.ok(r.score >= 50 && r.score < 100, `score was ${r.score}`);
+});
+
+test('scoreRelease: a 60fps AI remux scores low by name — duration must carry it', () => {
+  const r = scoreRelease(
+    'Backrooms.2026.2160p.iT.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-BYNDR',
+    [
+      'Backrooms.2026.2160p.60fps.REMUX.HEVC..AI.RIFE.DV.HDR10.DDP.5.1.ATMOS.V2-WoodrowsPoo69&Bigboy2k',
+    ]
+  );
+  // Deliberately not asserting a high score: the point is that name similarity
+  // alone would hide this result, so the duration signal has to surface it.
+  assert.equal(r.tier, 'similar');
+  assert.ok(r.score < 100);
 });
 
 /** Build a real ZIP in memory so the reader is tested against actual bytes. */

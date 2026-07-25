@@ -17,6 +17,33 @@ export interface MatchResult {
   /** 0–100, what we show the user. */
   score: number;
   tier: MatchTier;
+  /**
+   * The candidate's release is known to run for the same time as the one being
+   * played. Reported separately from `score` rather than folded into it: a name
+   * can look unlike ours (an extra `HDR` token, a 60fps AI-interpolated remux)
+   * while the runtime — and therefore the subtitle timing — is identical.
+   */
+  durationMatched?: boolean;
+}
+
+/**
+ * Runtime tolerance, as the spec's `max(N seconds, X% of runtime)` (§4.5).
+ * A fixed floor alone is wrong because recap/credit differences scale with
+ * nothing, while a pure percentage under-shoots short episodes and over-shoots
+ * long films. Durations parsed from addon descriptions are usually
+ * minute-granular, so the floor also absorbs rounding.
+ */
+export function durationsMatch(
+  a: number | undefined,
+  b: number | undefined,
+  opts: { toleranceSeconds: number; tolerancePercent: number }
+): boolean {
+  if (!a || !b || a <= 0 || b <= 0) return false;
+  const tolerance = Math.max(
+    opts.toleranceSeconds * 1000,
+    (Math.max(a, b) * opts.tolerancePercent) / 100
+  );
+  return Math.abs(a - b) <= tolerance;
 }
 
 /**

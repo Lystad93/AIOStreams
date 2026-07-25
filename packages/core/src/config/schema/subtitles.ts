@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { commaSeparatedList } from './helpers.js';
+import { commaSeparatedList, nonNegativeInt } from './helpers.js';
 import type { RuntimeConfigSection } from '../types.js';
 
 /**
@@ -70,6 +70,26 @@ export const subtitlesSchema = {
     env: 'SUBTITLE_SUBDL_API_KEY',
     requiresRestart: false,
     secret: true,
+  },
+  durationToleranceSeconds: {
+    schema: nonNegativeInt,
+    default: 60,
+    label: 'Duration match tolerance (seconds)',
+    description:
+      'How far two runtimes may differ and still count as the same content. Applied as `max(this, percentage below)`: a fixed floor absorbs the minute-level rounding in addon-reported runtimes, while the percentage scales with long films.',
+    env: 'SUBTITLE_DURATION_TOLERANCE_SECONDS',
+    requiresRestart: false,
+    secret: false,
+  },
+  durationTolerancePercent: {
+    schema: z.number().min(0).max(20),
+    default: 0.5,
+    label: 'Duration match tolerance (%)',
+    description:
+      'Percentage of the runtime allowed to differ, used when it is larger than the fixed tolerance above.',
+    env: 'SUBTITLE_DURATION_TOLERANCE_PERCENT',
+    requiresRestart: false,
+    secret: false,
   },
   reuploadTags: {
     schema: commaSeparatedList,

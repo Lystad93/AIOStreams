@@ -14,6 +14,7 @@ import { Cache, appConfig } from '../utils/index.js';
 import { getSimpleTextHash } from '../utils/crypto.js';
 import { PLAYBACK_PATH_PREFIX } from '../debrid/utils.js';
 import { createLogger } from '../logging/logger.js';
+import { normaliseReleaseName } from './release-name.js';
 
 const logger = createLogger('subtitles');
 
@@ -33,13 +34,25 @@ export interface ServedRelease {
   url: string;
   size?: number;
   filename?: string;
+  /** Runtime reported for this release, in ms (0/undefined = unknown). */
+  durationMs?: number;
 }
 
 interface StreamLike {
   url?: string;
   size?: number;
   filename?: string;
+  duration?: number;
 }
+
+/**
+ * Runtimes of every release offered for a title, keyed by canonical release
+ * name. Two releases with the same runtime carry the same subtitle timing even
+ * when their names differ (an added `HDR` token, or a 60fps AI-interpolated
+ * remux), so this is what lets a subtitle found for one release be offered for
+ * another (spec §4.5/§8).
+ */
+export type ReleaseDurationIndex = Record<string, number>;
 
 const cache = () =>
   Cache.getInstance<string, ServedRelease>(
@@ -47,6 +60,25 @@ const cache = () =>
     undefined,
     RELEASE_STORE
   );
+
+const durationCache = () =>
+  Cache.getInstance<string, ReleaseDurationIndex>(
+    'subtitle-release-durations',
+    undefined,
+    RELEASE_STORE
+  );
+
+function durationKey(uuid: string, contentId: string): string {
+  return getSimpleTextHash([uuid, contentId].map(encodeURIComponent).join('|'));
+}
+
+/** Runtimes of every release we've seen offered for this title. */
+export async function getReleaseDurations(
+  uuid: string,
+  contentId: string
+): Promise<ReleaseDurationIndex> {
+  return (await durationCache().get(durationKey(uuid, contentId))) ?? {};
+}
 
 function key(
   uuid: string,
@@ -95,6 +127,7 @@ export async function recordServedReleases(
         url: s.url,
         size: s.size,
         filename: s.filename,
+        durationMs: s.duration && s.duration > 0 ? s.duration : undefined,
       };
       // Store under several keys so the lookup can degrade from most to least
       // specific depending on which fields the player actually sends back.
@@ -107,8 +140,30 @@ export async function recordServedReleases(
       );
     })
   );
+  // Index every release's runtime, not just the ones we own the playback for:
+  // a subtitle found for ANY release in the list can be reused for the one
+  // being played when their runtimes agree.
+  const durations: ReleaseDurationIndex = {
+    ...(await getReleaseDurations(uuid, contentId)),
+  };
+  let withDuration = 0;
+  for (const s of streams) {
+    if (!s.filename || !s.duration || s.duration <= 0) continue;
+    const k = normaliseReleaseName(s.filename);
+    if (!k) continue;
+    durations[k] = s.duration;
+    withDuration++;
+  }
+  if (withDuration > 0) {
+    await durationCache().set(
+      durationKey(uuid, contentId),
+      durations,
+      TTL_SECONDS
+    );
+  }
+
   logger.debug(
-    { contentId, total: streams.length, recorded },
+    { contentId, total: streams.length, recorded, withDuration },
     'recorded served releases for subtitles'
   );
 }

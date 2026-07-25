@@ -232,6 +232,7 @@ router.get(
         model: cfg.model,
         filename: served.filename,
         videoSize: served.size,
+        durationMs: served.durationMs,
         now,
       });
 

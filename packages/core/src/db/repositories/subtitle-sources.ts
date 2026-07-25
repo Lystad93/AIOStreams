@@ -165,6 +165,35 @@ export const SubtitleSourceRepository = {
     return rows.map(toMeta);
   },
 
+  /**
+   * Source subtitles for this title whose measured runtime matches `durationMs`
+   * within `toleranceMs`.
+   *
+   * This is what lets an extraction be reused across releases that differ only
+   * cosmetically — an added `HDR` token, a different encode, a 60fps
+   * AI-interpolated remux — because none of those change the runtime, and so
+   * none of them change the subtitle timing. Without it every variant would
+   * re-download and re-demux the whole file.
+   */
+  async findByDuration(
+    contentId: string,
+    durationMs: number,
+    toleranceMs: number,
+    ownerUuid?: string
+  ): Promise<SubtitleSourceMeta[]> {
+    if (!durationMs || durationMs <= 0) return [];
+    const scope = ownerUuid ? sql` AND created_by = ${ownerUuid}` : sql``;
+    const rows = await getDb().query<DbRow>(sql`
+      SELECT ${META_COLUMNS} FROM subtitle_sources
+      WHERE content_id = ${contentId}
+        AND duration_ms IS NOT NULL
+        AND duration_ms BETWEEN ${durationMs - toleranceMs}
+                            AND ${durationMs + toleranceMs}${scope}
+      ORDER BY created_at DESC
+    `);
+    return rows.map(toMeta);
+  },
+
   /** Which of these filenames have at least one stored source subtitle. */
   async filterWithSources(
     filenames: string[],

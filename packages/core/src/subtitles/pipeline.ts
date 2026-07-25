@@ -69,6 +69,8 @@ export interface RunJobInput {
   /** Original release filename/size, recorded in the durable dashboard store. */
   filename?: string;
   videoSize?: number;
+  /** Runtime of the release, used to reuse a subtitle from a variant release. */
+  durationMs?: number;
   now: number;
 }
 
@@ -156,7 +158,8 @@ async function runExactJob(input: RunJobInput): Promise<void> {
     const reusable = await findReusableSource(
       input.filename,
       input.sourceLanguages,
-      job.uuid
+      job.uuid,
+      { contentId: job.contentId, durationMs: input.durationMs }
     );
 
     let srt: string;

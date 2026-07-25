@@ -19,7 +19,11 @@ import type { Subtitle, UserData } from '../db/schemas.js';
 import { SubtitleJobRepository } from '../db/index.js';
 import { ExtrasParser } from '../utils/extras.js';
 import { getJob, jobId, resultId, getResult, isStaleJob } from './job-store.js';
-import { lookupServedRelease, releaseHash } from './release-lookup.js';
+import {
+  lookupServedRelease,
+  releaseHash,
+  getReleaseDurations,
+} from './release-lookup.js';
 import { estimateEtaSeconds, startExactJob } from './pipeline.js';
 import { hasReusableSource } from './sources.js';
 import { encodeSubtitleToken, encodeExternalToken } from './token.js';
@@ -156,7 +160,8 @@ export async function buildSubtitleSlots(
   const canReuseSource = await hasReusableSource(
     served.filename,
     cfg.sourceLanguages,
-    uuid
+    uuid,
+    { contentId: id, durationMs: served.durationMs }
   );
   const eta = fmtEta(
     estimateEtaSeconds({
@@ -253,21 +258,33 @@ export async function buildExternalSlots(
   filename: string | undefined,
   languages: string[]
 ): Promise<Subtitle[]> {
+  const uuid = userData.uuid;
+  if (!uuid) return [];
   if (!appConfig.subtitles.externalEnabled) return [];
   if (!filename || languages.length === 0) return [];
   const { imdbId, season, episode } = parseImdbContentId(contentId);
   if (!imdbId) return [];
 
-  const cacheKey = `${imdbId}|${season ?? ''}|${episode ?? ''}|${normaliseReleaseName(filename)}|${languages.join(',')}`;
+  // Runtimes of every release offered for this title, so a subtitle claiming a
+  // different release can still be recognised as timing-compatible.
+  const durationIndex = await getReleaseDurations(uuid, contentId);
+  const ourKey = normaliseReleaseName(filename);
+  const ourDurationMs = ourKey ? durationIndex[ourKey] : undefined;
+
+  const cacheKey = `${imdbId}|${season ?? ''}|${episode ?? ''}|${ourKey}|${languages.join(',')}|${ourDurationMs ?? ''}`;
   let matches = await externalCache().get(cacheKey);
   if (matches === undefined) {
-    matches = await findExternalSubtitles({
-      imdbId,
-      season,
-      episode,
-      languages,
-      filename,
-    });
+    matches = await findExternalSubtitles(
+      { imdbId, season, episode, languages, filename },
+      {
+        duration: {
+          ourDurationMs,
+          index: durationIndex,
+          toleranceSeconds: appConfig.subtitles.durationToleranceSeconds,
+          tolerancePercent: appConfig.subtitles.durationTolerancePercent,
+        },
+      }
+    );
     await externalCache().set(cacheKey, matches, EXTERNAL_TTL_SECONDS);
   }
 
@@ -290,10 +307,13 @@ export async function buildExternalSlots(
         : match.tier === 'exact-release'
           ? `${match.candidate.lang} — 100% exact release`
           : `${match.candidate.lang} — ${match.score}% match`;
+    // Surfaced separately from the percentage: a runtime match is independent
+    // evidence that the timing lines up, even when the names look different.
+    const duration = match.durationMatched ? ' · duration ✓' : '';
     slots.push({
       id: `aiostreams-external-${match.candidate.provider}-${i}`,
       url: slotUrl('external', token),
-      lang: `${label} (${match.candidate.provider}${
+      lang: `${label}${duration} (${match.candidate.provider}${
         match.candidate.hearingImpaired ? ', SDH' : ''
       })`,
     });

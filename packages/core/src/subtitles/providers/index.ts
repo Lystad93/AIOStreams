@@ -6,7 +6,9 @@
  */
 import { createLogger } from '../../logging/logger.js';
 import { appConfig, normaliseLanguage } from '../../utils/index.js';
-import { scoreRelease, type MatchTier } from '../match.js';
+import { scoreRelease, durationsMatch, type MatchTier } from '../match.js';
+import { normaliseReleaseName } from '../release-name.js';
+import type { ReleaseDurationIndex } from '../release-lookup.js';
 import { subsourceClient } from './subsource.js';
 import { subdlClient } from './subdl.js';
 import type {
@@ -24,6 +26,20 @@ export interface ScoredSubtitle {
   candidate: ExternalSubtitleCandidate;
   score: number;
   tier: MatchTier;
+  /** The claimed release runs for the same time as the one being played. */
+  durationMatched?: boolean;
+}
+
+/**
+ * Runtime context for correlating by duration: what the playing release runs
+ * for, and the runtimes of every other release offered for this title (so a
+ * subtitle claiming a DIFFERENT release can still be recognised as compatible).
+ */
+export interface DurationContext {
+  ourDurationMs?: number;
+  index: ReleaseDurationIndex;
+  toleranceSeconds: number;
+  tolerancePercent: number;
 }
 
 export function getProviderClient(
@@ -45,7 +61,11 @@ export function configuredProviders(): SubtitleProviderClient[] {
  */
 export async function findExternalSubtitles(
   query: ExternalSearchQuery,
-  opts: { minScore?: number; limit?: number } = {}
+  opts: {
+    minScore?: number;
+    limit?: number;
+    duration?: DurationContext;
+  } = {}
 ): Promise<ScoredSubtitle[]> {
   const clients = configuredProviders();
   if (clients.length === 0) return [];
@@ -103,12 +123,40 @@ export async function findExternalSubtitles(
       query.filename,
       candidate.releaseNames
     );
-    if (score < minScore) continue;
-    scored.push({ candidate, score, tier });
+
+    // Does any release this subtitle claims run for the same time as ours? The
+    // runtimes come from the stream list, so this resolves even when the
+    // claimed release is a different one than we're playing.
+    let durationMatched = false;
+    const d = opts.duration;
+    if (d?.ourDurationMs) {
+      for (const claimed of candidate.releaseNames) {
+        const claimedKey = normaliseReleaseName(claimed);
+        const claimedDuration = claimedKey ? d.index[claimedKey] : undefined;
+        if (
+          durationsMatch(d.ourDurationMs, claimedDuration, {
+            toleranceSeconds: d.toleranceSeconds,
+            tolerancePercent: d.tolerancePercent,
+          })
+        ) {
+          durationMatched = true;
+          break;
+        }
+      }
+    }
+
+    // A matching runtime is strong evidence on its own, so such a candidate is
+    // kept even when its NAME barely resembles ours — that's exactly the case
+    // the score alone gets wrong.
+    if (score < minScore && !durationMatched) continue;
+    scored.push({ candidate, score, tier, durationMatched });
   }
 
   scored.sort(
     (a, b) =>
+      // Runtime agreement outranks name similarity — it speaks to whether the
+      // timing will actually line up.
+      Number(b.durationMatched ?? false) - Number(a.durationMatched ?? false) ||
       b.score - a.score ||
       // Prefer a subtitle written for one episode over a whole-season pack,
       // then fall back to popularity.
