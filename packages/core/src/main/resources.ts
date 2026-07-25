@@ -38,6 +38,7 @@ import {
   recordServedReleases,
   buildSubtitleSlots,
   precacheTranslateExact,
+  markTranslatedStreams,
 } from '../subtitles/index.js';
 import { precacheCache } from './caches.js';
 import {
@@ -714,6 +715,28 @@ function recordReleasesForSubtitles(
   });
 }
 
+/**
+ * Set `{stream.subtitleTranslated}` for the formatter. Awaited (the formatter
+ * reads it) but cheap — one batched query, and a no-op when the feature isn't
+ * configured. Recomputed on the cached path too, since a translation may have
+ * finished after the pipeline result was cached.
+ */
+async function markTranslatedForSubtitles(
+  ctx: AIOStreamsContext,
+  id: string,
+  streams: ParsedStream[]
+): Promise<void> {
+  if (!ctx.userData?.subtitleTranslation?.enabled) return;
+  try {
+    await markTranslatedStreams(ctx.userData, id, streams);
+  } catch (error) {
+    logger.debug(
+      { error: error instanceof Error ? error.message : String(error) },
+      'failed to mark translated subtitle streams'
+    );
+  }
+}
+
 export async function getStreams(
   ctx: AIOStreamsContext,
   id: string,
@@ -758,6 +781,7 @@ export async function getStreams(
       logger.debug({ type, id }, 'pipeline result cache hit');
       if (cached.data?.streams) {
         recordReleasesForSubtitles(ctx, id, cached.data.streams);
+        await markTranslatedForSubtitles(ctx, id, cached.data.streams);
       }
       return cached;
     }
@@ -1036,6 +1060,7 @@ export async function getStreams(
   // file the user plays back to its owned playback URL for extraction (spec
   // §3.3/§4.2). Non-blocking; failures here must not affect the stream reply.
   recordReleasesForSubtitles(ctx, id, finalStreams);
+  await markTranslatedForSubtitles(ctx, id, finalStreams);
 
   const response: StreamsResponse = {
     success: true,

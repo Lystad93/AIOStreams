@@ -139,6 +139,12 @@ export function StreamTab({
           onChange={(library) => patch({ library })}
         />
         <SwitchField
+          field="stream.subtitleTranslated"
+          label="Subtitle translated"
+          value={input.subtitleTranslated}
+          onChange={(subtitleTranslated) => patch({ subtitleTranslated })}
+        />
+        <SwitchField
           field="stream.private"
           label="Private"
           value={input.private}

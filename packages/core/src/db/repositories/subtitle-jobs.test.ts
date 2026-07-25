@@ -118,6 +118,41 @@ test('subtitle_jobs: failed job stores error and no translated SRT', async () =>
   assert.equal(await SubtitleJobRepository.hasTranslated('job-2'), false);
 });
 
+test('filterTranslated: returns only ids with a stored translation', async () => {
+  const base = {
+    uuid: 'user-d',
+    contentId: 'tt8',
+    releaseHash: 'rh4',
+    sourcePath: 'exact',
+    targetLang: 'Norwegian',
+    status: 'done',
+    createdAt: 4000,
+    updatedAt: 4000,
+  };
+  await SubtitleJobRepository.saveMeta({ ...base, id: 'has-srt' });
+  await SubtitleJobRepository.setTranslatedSrt('has-srt', 'NOR SRT', 4100, 5000);
+  // Row exists but never produced a translation (e.g. still running / failed).
+  await SubtitleJobRepository.saveMeta({
+    ...base,
+    id: 'no-srt',
+    status: 'running',
+  });
+
+  const found = await SubtitleJobRepository.filterTranslated([
+    'has-srt',
+    'no-srt',
+    'never-seen',
+  ]);
+  assert.deepEqual([...found], ['has-srt']);
+  // Empty input must not build an invalid `IN ()` query.
+  assert.equal((await SubtitleJobRepository.filterTranslated([])).size, 0);
+
+  // Clean up: the `running` row would otherwise leak into the
+  // markInterrupted test's expected count (tests share one DB).
+  await SubtitleJobRepository.delete('has-srt');
+  await SubtitleJobRepository.delete('no-srt');
+});
+
 test('markInterrupted: in-flight jobs are failed at startup, terminal ones untouched', async () => {
   const base = {
     uuid: 'user-c',

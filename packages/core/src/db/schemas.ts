@@ -1144,6 +1144,12 @@ export const ParsedStreamSchema = z.object({
   /**Bitrate in bps */
   bitrate: z.number().optional(),
   library: z.boolean().optional(),
+  /**
+   * A finished AI translation already exists for this exact release in the
+   * user's target language (spec §4.2/§4.4) — i.e. selecting it means the
+   * translated subtitle is ready immediately, with no extraction wait.
+   */
+  subtitleTranslated: z.boolean().optional(),
   /** Upstream matched this release against an ID-indexed source, not a text search. */
   idMatched: z.boolean().optional(),
   seadex: z

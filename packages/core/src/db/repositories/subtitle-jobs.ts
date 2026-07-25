@@ -1,5 +1,5 @@
 import { getDb } from '../db.js';
-import { sql } from '../sql.js';
+import { sql, join } from '../sql.js';
 
 /**
  * Durable store for subtitle extraction+translation jobs (spec §4.2/§4.4),
@@ -206,6 +206,22 @@ export const SubtitleJobRepository = {
       `);
     }
     return stuck;
+  },
+
+  /**
+   * Of the given job ids, which already have a finished translation stored.
+   * One query for a whole stream list (the formatter's `subtitleTranslated`
+   * flag), rather than a lookup per stream.
+   */
+  async filterTranslated(ids: string[]): Promise<Set<string>> {
+    if (ids.length === 0) return new Set();
+    const rows = await getDb().query<{ [k: string]: unknown; id: string }>(sql`
+      SELECT id FROM subtitle_jobs
+      WHERE translated_srt IS NOT NULL
+        AND LENGTH(translated_srt) > 0
+        AND id IN (${join(ids.map((id) => sql`${id}`))})
+    `);
+    return new Set(rows.map((r) => r.id));
   },
 
   /** Cheap check: is a finished translation stored for this job id? */

@@ -40,6 +40,7 @@ export interface PreviewInput {
   infoHash: string;
   message: string;
   library: boolean;
+  subtitleTranslated: boolean;
   proxied: boolean;
   private: boolean;
   freeleech: boolean;
@@ -148,6 +149,7 @@ export const DEFAULT_PREVIEW_INPUT: PreviewInput = {
   infoHash: 'dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c',
   message: 'This is a message',
   library: false,
+  subtitleTranslated: false,
   proxied: false,
   private: false,
   freeleech: false,
@@ -188,6 +190,7 @@ const STREAM_FIELDS = [
   'stream.infoHash',
   'stream.message',
   'stream.library',
+  'stream.subtitleTranslated',
   'stream.private',
   'stream.freeleech',
   'stream.proxied',
@@ -503,6 +506,7 @@ export function buildParsedStream(input: PreviewInput): ParsedStream {
       timeout: 10000,
     },
     library: input.library,
+    subtitleTranslated: input.subtitleTranslated,
     parsedFile,
     filename: input.filename,
     folderName: input.folderName,

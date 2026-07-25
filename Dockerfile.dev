@@ -1,0 +1,67 @@
+# Fast-iteration image for a TEST instance. Not for production.
+#
+# The production Dockerfile spends ~55s per build slimming the final image:
+# it deletes node_modules, reinstalls prod-only deps, then copies everything
+# into a distroless stage. A disposable test container needs none of that, so
+# this file stops right after the compile and runs from the builder stage.
+#
+# Trade-off: the resulting image is much larger (it keeps dev dependencies and
+# the build toolchain). Prune old ones periodically: `docker image prune -f`.
+#
+# Usage (in apps/aiostreams-fork/compose.yaml):
+#   build:
+#     context: ./AIOStreams
+#     dockerfile: Dockerfile.dev
+
+FROM node:24-slim AS base
+
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+RUN corepack enable
+
+FROM base AS builder
+
+WORKDIR /build
+
+# Build toolchain for native addons without prebuilt binaries (e.g. yencode).
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends python3 make g++ \
+  && rm -rf /var/lib/apt/lists/*
+
+# Manifests first so the dependency install layer caches independently of source.
+COPY LICENSE ./
+COPY package*.json ./
+COPY packages/server/package*.json ./packages/server/
+COPY packages/core/package*.json ./packages/core/
+COPY packages/frontend/package*.json ./packages/frontend/
+COPY packages/seanime-extensions/package*.json ./packages/seanime-extensions/
+COPY pnpm-workspace.yaml ./pnpm-workspace.yaml
+COPY pnpm-lock.yaml ./pnpm-lock.yaml
+COPY patches ./patches
+
+RUN pnpm install --frozen-lockfile
+
+COPY tsconfig.*json ./
+COPY scripts ./scripts
+COPY resources ./resources
+COPY packages/server ./packages/server
+COPY packages/core ./packages/core
+COPY packages/frontend ./packages/frontend
+COPY packages/seanime-extensions ./packages/seanime-extensions
+
+RUN pnpm run build
+
+# The build doesn't emit these: the server resolves `staticRoot` as
+# `<dist>/static`, and they're the status videos shown in the player
+# (downloading / no matching file / errors). Production copies them the same way.
+RUN cp -r packages/server/src/static packages/server/dist/static
+
+# Same static ffmpeg/ffprobe as production, for subtitle extraction.
+COPY --from=mwader/static-ffmpeg:7.1 /ffmpeg /usr/local/bin/ffmpeg
+COPY --from=mwader/static-ffmpeg:7.1 /ffprobe /usr/local/bin/ffprobe
+ENV FFMPEG_PATH=/usr/local/bin/ffmpeg
+ENV FFPROBE_PATH=/usr/local/bin/ffprobe
+
+EXPOSE ${PORT:-3000}
+
+CMD ["node", "packages/server/dist/server.js"]

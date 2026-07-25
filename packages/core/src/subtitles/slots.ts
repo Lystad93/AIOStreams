@@ -187,6 +187,48 @@ export async function buildSubtitleSlots(
 }
 
 /**
+ * Flag every stream that already has a finished translation stored for the
+ * user's target language, exposing `{stream.subtitleTranslated}` to the
+ * formatter. Lets the stream list show which releases are ready to watch with
+ * translated subtitles immediately (no extraction wait).
+ *
+ * One batched DB query for the whole list; mutates the streams in place.
+ */
+export async function markTranslatedStreams(
+  userData: UserData,
+  contentId: string,
+  streams: { size?: number; filename?: string; subtitleTranslated?: boolean }[]
+): Promise<void> {
+  const cfg = resolveSubtitleConfig(userData);
+  if (!cfg) return;
+  const uuid = userData.uuid;
+  if (!uuid) return;
+
+  const ids = new Map<string, (typeof streams)[number][]>();
+  for (const s of streams) {
+    if (s.size == null && !s.filename) continue;
+    const id = jobId({
+      uuid,
+      contentId,
+      releaseHash: releaseHash({ size: s.size, filename: s.filename }),
+      sourcePath: 'exact',
+      targetLang: cfg.targetLanguage,
+    });
+    const bucket = ids.get(id);
+    if (bucket) bucket.push(s);
+    else ids.set(id, [s]);
+  }
+  if (ids.size === 0) return;
+
+  const translated = await SubtitleJobRepository.filterTranslated([
+    ...ids.keys(),
+  ]);
+  for (const id of translated) {
+    for (const s of ids.get(id) ?? []) s.subtitleTranslated = true;
+  }
+}
+
+/**
  * Pre-translate the exact subtitle for a release that AIOStreams is precaching
  * (the next episode during a binge, spec §6). Fire-and-forget; gated so it only
  * runs when the user opted into BOTH precache-next-episode and this toggle, and

@@ -55,6 +55,7 @@ export interface ParseValue {
     bitrate: number | null;
     folderSize: number | null;
     library: boolean;
+    subtitleTranslated: boolean;
     quality: string | null;
     resolution: string | null;
     subbed: boolean;
@@ -493,6 +494,7 @@ export abstract class BaseFormatter {
         size: stream.size || null,
         folderSize: stream.folderSize || null,
         library: stream.library ?? false,
+        subtitleTranslated: stream.subtitleTranslated ?? false,
         quality: stream.parsedFile?.quality || null,
         resolution: stream.parsedFile?.resolution || null,
         subbed:
