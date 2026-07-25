@@ -318,6 +318,10 @@ export const Env = cleanEnv(process.env, {
     default: true,
     desc: 'Share extracted source subtitles across users on this instance. An extraction depends only on the release, not on who requested it or which language they wanted — sharing lets a second user (or a different target language) reuse it instead of re-downloading and re-demuxing the whole file. Set false to keep each user’s extractions private to them.',
   }),
+  SUBTITLE_REUPLOAD_TAGS: str({
+    default: '',
+    desc: 'Extra comma-separated suffixes that re-hosting sites append to an existing release name (e.g. `wtf` for `…-Kitsune-WtF`). These are ignored when matching a stored subtitle to the release being played. `wtf` is included by default.',
+  }),
   FFMPEG_PATH: str({
     default: 'ffmpeg',
     desc: 'Path to the ffmpeg binary used to extract embedded subtitle tracks.',

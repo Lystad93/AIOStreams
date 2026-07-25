@@ -8,6 +8,7 @@ import { pickTrack } from './extract.js';
 import { reassembleTranslations } from './translate.js';
 import { isStaleJob, blocksNewAttempt } from './job-store.js';
 import { pickSource } from './sources.js';
+import { normaliseReleaseName } from './release-name.js';
 import type { SubtitleSourceMeta } from '../db/repositories/subtitle-sources.js';
 import type { ProbedSubtitleTrack, SubtitleJob } from './types.js';
 
@@ -113,6 +114,60 @@ test('reassembleTranslations: ignores out-of-range/garbage indices, unescapes \\
   assert.equal(lines[0], 'x\ny');
   assert.equal(lines[1], 'b'); // untouched
   assert.equal(missing, 1);
+});
+
+test('normaliseReleaseName: all addon spellings of one release share a key', () => {
+  const canonical = normaliseReleaseName(
+    'From.S01E08.Broken.Windows.Open.Doors.2160p.STAN.WEB-DL.DDP5.1.H.265-Kitsune.mkv'
+  );
+  // Same release, as reported by other addons:
+  const variants = [
+    // no extension
+    'From.S01E08.Broken.Windows.Open.Doors.2160p.STAN.WEB-DL.DDP5.1.H.265-Kitsune',
+    // spaces instead of dots
+    'From S01E08 Broken Windows Open Doors 2160p STAN WEB-DL DDP5 1 H 265-Kitsune',
+    // percent-encoded spaces
+    'From%20S01E08%20Broken%20Windows%20Open%20Doors%202160p%20STAN%20WEB-DL%20DDP5%201%20H%20265-Kitsune',
+    // re-upload tag appended
+    'From.S01E08.Broken.Windows.Open.Doors.2160p.STAN.WEB-DL.DDP5.1.H.265-Kitsune-WtF',
+    // re-upload tag AND no extension AND different case
+    'from.s01e08.broken.windows.open.doors.2160p.stan.web-dl.ddp5.1.h.265-kitsune-wtf.mkv',
+    // underscores
+    'From_S01E08_Broken_Windows_Open_Doors_2160p_STAN_WEB-DL_DDP5_1_H_265-Kitsune',
+  ];
+  for (const v of variants) {
+    assert.equal(normaliseReleaseName(v), canonical, `variant failed: ${v}`);
+  }
+});
+
+test('normaliseReleaseName: must NOT merge different release groups', () => {
+  // The dangerous case a structural "drop last dash token" rule would break:
+  // these are different releases and must keep different keys.
+  const a = normaliseReleaseName('FROM.S01E08.2160p.MGMP.WEB-DL.H.265-XEBEC');
+  const b = normaliseReleaseName(
+    'From.S01E08.2160p.STAN.WEB-DL.H.265-Kitsune'
+  );
+  assert.notEqual(a, b);
+  // A real group must survive even when the name ends in WEB-DL-<group>.
+  const withDashDl = normaliseReleaseName('Show.2020.1080p.WEB-DL-Kitsune');
+  assert.ok(withDashDl.endsWith('-kitsune'), withDashDl);
+  assert.notEqual(
+    withDashDl,
+    normaliseReleaseName('Show.2020.1080p.WEB-DL-XEBEC')
+  );
+  // Different cuts stay distinct.
+  assert.notEqual(
+    normaliseReleaseName('Movie.2026.1080p-GRP'),
+    normaliseReleaseName('Movie.2026.EXTENDED.1080p-GRP')
+  );
+});
+
+test('normaliseReleaseName: handles empty/garbage input', () => {
+  assert.equal(normaliseReleaseName(undefined), '');
+  assert.equal(normaliseReleaseName(''), '');
+  assert.equal(normaliseReleaseName('   '), '');
+  // Malformed percent-encoding must not throw.
+  assert.equal(normaliseReleaseName('Bad%ZZ.Name.mkv'), 'bad%zz name');
 });
 
 test('pickSource: honours the user-ordered language priority, demotes forced/SDH', () => {

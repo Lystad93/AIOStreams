@@ -207,6 +207,55 @@ test('findTranslatedByFilenames: matches the same release across addons, scoped 
   await SubtitleJobRepository.delete('addon-a');
 });
 
+test('findTranslatedByFilenames: matches other addons’ spellings of the release', async () => {
+  const STORED = 'Spell.S02E03.2160p.WEB-DL.H.265-Kitsune.mkv';
+  await SubtitleJobRepository.saveMeta({
+    id: 'spell-1',
+    uuid: 'user-f',
+    contentId: 'tt11:2:3',
+    releaseHash: 'rh-spell',
+    sourcePath: 'exact',
+    targetLang: 'Norwegian',
+    status: 'done',
+    filename: STORED,
+    createdAt: 6000,
+    updatedAt: 6000,
+  });
+  await SubtitleJobRepository.setTranslatedSrt('spell-1', 'NOR', 6100, 900);
+
+  const spellings = [
+    'Spell.S02E03.2160p.WEB-DL.H.265-Kitsune', // no extension
+    'Spell S02E03 2160p WEB-DL H 265-Kitsune', // spaces
+    'Spell%20S02E03%202160p%20WEB-DL%20H%20265-Kitsune', // percent-encoded
+    'Spell.S02E03.2160p.WEB-DL.H.265-Kitsune-WtF', // re-upload
+  ];
+  for (const spelling of spellings) {
+    const hit = await SubtitleJobRepository.findTranslatedByFilenames(
+      'user-f',
+      'tt11:2:3',
+      'Norwegian',
+      [spelling]
+    );
+    // Reported under the caller's spelling so the stream can be flagged.
+    assert.equal(hit.get(spelling), 'spell-1', `missed: ${spelling}`);
+  }
+
+  // A genuinely different release must not match.
+  assert.equal(
+    (
+      await SubtitleJobRepository.findTranslatedByFilenames(
+        'user-f',
+        'tt11:2:3',
+        'Norwegian',
+        ['Spell.S02E03.2160p.WEB-DL.H.265-XEBEC']
+      )
+    ).size,
+    0
+  );
+
+  await SubtitleJobRepository.delete('spell-1');
+});
+
 test('markInterrupted: in-flight jobs are failed at startup, terminal ones untouched', async () => {
   const base = {
     uuid: 'user-c',

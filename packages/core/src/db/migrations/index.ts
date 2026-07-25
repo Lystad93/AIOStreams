@@ -17,6 +17,7 @@ import { usenetIndexerMetrics } from './0016_usenet_indexer_metrics.js';
 import { subtitleJobs } from './0017_subtitle_jobs.js';
 import { subtitleJobDuration } from './0018_subtitle_job_duration.js';
 import { subtitleSources } from './0019_subtitle_sources.js';
+import { subtitleMatchKey } from './0020_subtitle_match_key.js';
 import type { Migration } from './types.js';
 
 export const MIGRATIONS: readonly Migration[] = [
@@ -39,6 +40,7 @@ export const MIGRATIONS: readonly Migration[] = [
   subtitleJobs,
   subtitleJobDuration,
   subtitleSources,
+  subtitleMatchKey,
 ];
 
 export type { Migration } from './types.js';

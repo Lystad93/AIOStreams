@@ -1,6 +1,7 @@
 import { getDb } from '../db.js';
 import { sql, join } from '../sql.js';
 import { getSimpleTextHash } from '../../utils/crypto.js';
+import { normaliseReleaseName } from '../../subtitles/release-name.js';
 
 /**
  * The reusable *source* subtitle pool (see migration 0019). A row is one
@@ -109,8 +110,9 @@ export function sourceId(parts: {
   lang: string;
   origin: SubtitleSourceOrigin;
 }): string {
+  const key = normaliseReleaseName(parts.filename) || parts.filename;
   return getSimpleTextHash(
-    [parts.filename, parts.lang, parts.origin].map(encodeURIComponent).join('|')
+    [key, parts.lang, parts.origin].map(encodeURIComponent).join('|')
   );
 }
 
@@ -121,7 +123,7 @@ export const SubtitleSourceRepository = {
         id, content_id, filename, video_size, lang, origin, track_index,
         track_codec, forced, hearing_impaired, track_title, duration_ms, fps,
         width, height, video_codec, cue_count, first_cue_ms, last_cue_ms,
-        srt, created_by, created_at
+        srt, created_by, created_at, match_key
       ) VALUES (
         ${source.id}, ${source.contentId ?? null}, ${source.filename},
         ${source.videoSize ?? null}, ${source.lang}, ${source.origin},
@@ -131,7 +133,8 @@ export const SubtitleSourceRepository = {
         ${source.fps ?? null}, ${source.width ?? null}, ${source.height ?? null},
         ${source.videoCodec ?? null}, ${source.cueCount ?? null},
         ${source.firstCueMs ?? null}, ${source.lastCueMs ?? null},
-        ${source.srt}, ${source.createdBy ?? null}, ${source.createdAt}
+        ${source.srt}, ${source.createdBy ?? null}, ${source.createdAt},
+        ${normaliseReleaseName(source.filename) || null}
       )
       ON CONFLICT (id) DO UPDATE SET
         srt = ${source.srt},
@@ -155,7 +158,8 @@ export const SubtitleSourceRepository = {
     const scope = ownerUuid ? sql` AND created_by = ${ownerUuid}` : sql``;
     const rows = await getDb().query<DbRow>(sql`
       SELECT ${META_COLUMNS} FROM subtitle_sources
-      WHERE filename = ${filename}${scope}
+      WHERE (match_key = ${normaliseReleaseName(filename) || filename}
+             OR filename = ${filename})${scope}
       ORDER BY created_at DESC
     `);
     return rows.map(toMeta);
@@ -168,13 +172,30 @@ export const SubtitleSourceRepository = {
   ): Promise<Set<string>> {
     if (filenames.length === 0) return new Set();
     const scope = ownerUuid ? sql` AND created_by = ${ownerUuid}` : sql``;
-    const rows = await getDb().query<{ [k: string]: unknown; filename: string }>(
+    const keys = [...new Set(filenames.map((f) => normaliseReleaseName(f)))].filter(Boolean);
+    const rows = await getDb().query<{
+      [k: string]: unknown;
+      filename: string;
+      match_key: string | null;
+    }>(
       sql`
-        SELECT DISTINCT filename FROM subtitle_sources
-        WHERE filename IN (${join(filenames.map((f) => sql`${f}`))})${scope}
+        SELECT DISTINCT filename, match_key FROM subtitle_sources
+        WHERE (
+          match_key IN (${join(keys.map((k) => sql`${k}`))})
+          OR filename IN (${join(filenames.map((f) => sql`${f}`))})
+        )${scope}
       `
     );
-    return new Set(rows.map((r) => r.filename));
+    // Report hits under the caller's own spelling of the filename.
+    const hit = new Set<string>();
+    for (const r of rows) {
+      if (r.match_key) hit.add(r.match_key);
+      if (r.filename) hit.add(normaliseReleaseName(r.filename));
+      if (r.filename) hit.add(r.filename);
+    }
+    return new Set(
+      filenames.filter((f) => hit.has(normaliseReleaseName(f)) || hit.has(f))
+    );
   },
 
   async getSrt(id: string): Promise<string | undefined> {

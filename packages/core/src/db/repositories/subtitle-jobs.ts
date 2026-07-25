@@ -1,5 +1,6 @@
 import { getDb } from '../db.js';
 import { sql, join } from '../sql.js';
+import { normaliseReleaseName } from '../../subtitles/release-name.js';
 
 /**
  * Durable store for subtitle extraction+translation jobs (spec §4.2/§4.4),
@@ -97,13 +98,14 @@ export const SubtitleJobRepository = {
       INSERT INTO subtitle_jobs (
         id, uuid, content_id, release_hash, source_path, target_lang,
         source_lang, status, filename, video_size, provider, model, error,
-        created_at, updated_at, completed_at
+        created_at, updated_at, completed_at, match_key
       ) VALUES (
         ${meta.id}, ${meta.uuid}, ${meta.contentId}, ${meta.releaseHash},
         ${meta.sourcePath}, ${meta.targetLang}, ${meta.sourceLang ?? null},
         ${meta.status}, ${meta.filename ?? null}, ${meta.videoSize ?? null},
         ${meta.provider ?? null}, ${meta.model ?? null}, ${meta.error ?? null},
-        ${meta.createdAt}, ${meta.updatedAt}, ${meta.completedAt ?? null}
+        ${meta.createdAt}, ${meta.updatedAt}, ${meta.completedAt ?? null},
+        ${normaliseReleaseName(meta.filename) || null}
       )
       ON CONFLICT (id) DO UPDATE SET
         source_lang = ${meta.sourceLang ?? null},
@@ -114,7 +116,8 @@ export const SubtitleJobRepository = {
         model = ${meta.model ?? null},
         error = ${meta.error ?? null},
         updated_at = ${meta.updatedAt},
-        completed_at = ${meta.completedAt ?? null}
+        completed_at = ${meta.completedAt ?? null},
+        match_key = ${normaliseReleaseName(meta.filename) || null}
     `);
   },
 
@@ -226,21 +229,36 @@ export const SubtitleJobRepository = {
     filenames: string[]
   ): Promise<Map<string, string>> {
     if (filenames.length === 0) return new Map();
+    const keys = [...new Set(filenames.map((f) => normaliseReleaseName(f)))].filter(Boolean);
     const rows = await getDb().query<{
       [k: string]: unknown;
       id: string;
       filename: string | null;
+      match_key: string | null;
     }>(sql`
-      SELECT id, filename FROM subtitle_jobs
+      SELECT id, filename, match_key FROM subtitle_jobs
       WHERE uuid = ${uuid}
         AND content_id = ${contentId}
         AND target_lang = ${targetLang}
         AND translated_srt IS NOT NULL
         AND LENGTH(translated_srt) > 0
-        AND filename IN (${join(filenames.map((f) => sql`${f}`))})
+        AND (
+          match_key IN (${join(keys.map((k) => sql`${k}`))})
+          OR filename IN (${join(filenames.map((f) => sql`${f}`))})
+        )
     `);
+    // Report hits under the caller's own spelling of the filename.
+    const byKey = new Map<string, string>();
+    for (const r of rows) {
+      const key = r.match_key || normaliseReleaseName(r.filename ?? '');
+      if (key) byKey.set(key, r.id);
+      if (r.filename) byKey.set(r.filename, r.id);
+    }
     const out = new Map<string, string>();
-    for (const r of rows) if (r.filename) out.set(r.filename, r.id);
+    for (const f of filenames) {
+      const id = byKey.get(normaliseReleaseName(f)) ?? byKey.get(f);
+      if (id) out.set(f, id);
+    }
     return out;
   },
 

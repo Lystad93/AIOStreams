@@ -95,6 +95,46 @@ test('subtitle_sources: re-extracting the same release upserts rather than dupli
   assert.equal(await SubtitleSourceRepository.getSrt(id), 'UPDATED SRT');
 });
 
+test('subtitle_sources: found under any addon spelling of the same release', async () => {
+  const STORED = 'Alt.S01E02.1080p.WEB-DL.H.264-Kitsune.mkv';
+  await SubtitleSourceRepository.put({
+    id: sourceId({ filename: STORED, lang: 'English', origin: 'extracted' }),
+    filename: STORED,
+    lang: 'English',
+    origin: 'extracted',
+    forced: false,
+    hearingImpaired: false,
+    srt: 'SRT',
+    createdAt: 4000,
+  });
+
+  // Every one of these is the same release, spelled differently by an addon.
+  const spellings = [
+    'Alt.S01E02.1080p.WEB-DL.H.264-Kitsune', // no extension
+    'Alt S01E02 1080p WEB-DL H 264-Kitsune', // spaces
+    'Alt%20S01E02%201080p%20WEB-DL%20H%20264-Kitsune', // percent-encoded
+    'Alt.S01E02.1080p.WEB-DL.H.264-Kitsune-WtF', // re-upload tag
+  ];
+  for (const spelling of spellings) {
+    const found = await SubtitleSourceRepository.findByFilename(spelling);
+    assert.equal(found.length, 1, `not found for: ${spelling}`);
+    assert.equal(found[0].lang, 'English');
+    // filterWithSources reports the hit under the caller's own spelling.
+    const set = await SubtitleSourceRepository.filterWithSources([spelling]);
+    assert.ok(set.has(spelling), `filterWithSources missed: ${spelling}`);
+  }
+
+  // A different release group must NOT match.
+  assert.equal(
+    (
+      await SubtitleSourceRepository.findByFilename(
+        'Alt.S01E02.1080p.WEB-DL.H.264-XEBEC'
+      )
+    ).length,
+    0
+  );
+});
+
 test('subtitle_sources: different languages of one release coexist', async () => {
   await SubtitleSourceRepository.put({
     id: sourceId({ filename: FILE, lang: 'Danish', origin: 'extracted' }),
