@@ -305,23 +305,7 @@ export const Env = cleanEnv(process.env, {
     default: false,
     desc: 'Allow the dashboard System page to restart/stop the AIOStreams process.',
   }),
-  // --- Subtitle extraction & translation (spec §4.2/§4.4/§7) ---------------
-  SUBTITLE_TRANSLATION_ENABLED: bool({
-    default: true,
-    desc: 'Master switch for the subtitle extraction+translation feature. When false, no translation slots are ever emitted.',
-  }),
-  SUBTITLE_EXTRACTION_ALLOWED: bool({
-    default: true,
-    desc: 'Public-instance gate (spec §7): allow the full-file extraction paths (§4.2/§4.3), which download the release on the backbone. Operators of public multi-tenant instances should set this false so only correlation-only features run. Users must still supply their own translation API key.',
-  }),
-  SUBTITLE_SHARE_SOURCES: bool({
-    default: true,
-    desc: 'Share extracted source subtitles across users on this instance. An extraction depends only on the release, not on who requested it or which language they wanted — sharing lets a second user (or a different target language) reuse it instead of re-downloading and re-demuxing the whole file. Set false to keep each user’s extractions private to them.',
-  }),
-  SUBTITLE_REUPLOAD_TAGS: str({
-    default: '',
-    desc: 'Extra comma-separated suffixes that re-hosting sites append to an existing release name (e.g. `wtf` for `…-Kitsune-WtF`). These are ignored when matching a stored subtitle to the release being played. `wtf` is included by default.',
-  }),
+  // --- Subtitle extraction (binary paths; the tunables live in config/schema) ---
   FFMPEG_PATH: str({
     default: 'ffmpeg',
     desc: 'Path to the ffmpeg binary used to extract embedded subtitle tracks.',

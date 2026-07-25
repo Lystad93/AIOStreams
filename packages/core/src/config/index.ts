@@ -26,6 +26,7 @@ import {
   analyticsSchema,
   usenetSchema,
   releaseBlocklistSchema,
+  subtitlesSchema,
 } from './schema/index.js';
 
 export const runtimeSchemas = {
@@ -48,6 +49,7 @@ export const runtimeSchemas = {
   analytics: analyticsSchema,
   usenet: usenetSchema,
   releaseBlocklist: releaseBlocklistSchema,
+  subtitles: subtitlesSchema,
 } as const;
 
 export const runtimeKeyAliases: Record<string, string> = {

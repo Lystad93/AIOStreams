@@ -119,7 +119,7 @@ export class AIOStreams {
     // borrowed from the stream resource so subtitles are requested for exactly
     // the content this addon serves.
     if (
-      appConfig.bootstrap.subtitleTranslationEnabled &&
+      appConfig.subtitles.translationEnabled &&
       this.ctx.userData.subtitleTranslation?.enabled &&
       !resources.some((r) => r.name === 'subtitles')
     ) {

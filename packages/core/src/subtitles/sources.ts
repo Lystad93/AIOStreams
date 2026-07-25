@@ -26,7 +26,7 @@ const logger = createLogger('subtitles');
  * (shared), otherwise restrict to this user's own.
  */
 export function sourceScope(uuid: string): string | undefined {
-  return appConfig.bootstrap.subtitleShareSources ? undefined : uuid;
+  return appConfig.subtitles.shareSources ? undefined : uuid;
 }
 
 /**

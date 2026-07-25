@@ -12,6 +12,7 @@
  * won't be found for the copy the user actually plays.
  */
 import { appConfig } from '../utils/index.js';
+import { settingsStore } from '../config/index.js';
 
 const VIDEO_EXTENSIONS =
   /\.(mkv|mp4|avi|m4v|mov|wmv|flv|webm|mpg|mpeg|m2ts|ts|ogm|divx|vob)$/i;
@@ -28,14 +29,16 @@ const VIDEO_EXTENSIONS =
 const DEFAULT_REUPLOAD_TAGS = ['wtf'];
 
 function reuploadTags(): string[] {
-  const configured = appConfig.bootstrap.subtitleReuploadTags;
-  const extra =
-    typeof configured === 'string' && configured.trim()
-      ? configured
-          .split(',')
-          .map((t) => t.trim().toLowerCase())
-          .filter(Boolean)
-      : [];
+  // Normalisation must work before runtime settings are up (e.g. in unit tests,
+  // or any pre-initialiseConfig code path) — reading the section then would trip
+  // the settings store's uninitialised-access guard. The operator-configured
+  // tags are additive, so falling back to the built-ins is correct, not a
+  // silently-swallowed error.
+  if (!settingsStore.initialised) return DEFAULT_REUPLOAD_TAGS;
+  const configured = appConfig.subtitles.reuploadTags;
+  const extra = Array.isArray(configured)
+    ? configured.map((t) => t.trim().toLowerCase()).filter(Boolean)
+    : [];
   return [...new Set([...DEFAULT_REUPLOAD_TAGS, ...extra])];
 }
 

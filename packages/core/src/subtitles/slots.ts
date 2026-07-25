@@ -58,7 +58,7 @@ export function resolveSubtitleConfig(userData: UserData): {
   provider: string;
   model?: string;
 } | null {
-  if (!appConfig.bootstrap.subtitleTranslationEnabled) return null;
+  if (!appConfig.subtitles.translationEnabled) return null;
   const cfg = userData.subtitleTranslation;
   if (!cfg?.enabled) return null;
   if (!cfg.apiKey || !cfg.targetLanguage) return null;
@@ -91,7 +91,7 @@ export async function buildSubtitleSlots(
     return [];
   }
   // Full-file extraction is the gated, download-heavy half (spec §7).
-  if (!appConfig.bootstrap.subtitleExtractionAllowed) {
+  if (!appConfig.subtitles.extractionAllowed) {
     logger.debug(
       { id },
       'subtitle slots: extraction disabled on this instance'
@@ -269,7 +269,7 @@ export async function precacheTranslateExact(
   const cfg = resolveSubtitleConfig(userData);
   if (!cfg) return;
   if (!userData.subtitleTranslation?.precacheNextEpisode) return;
-  if (!appConfig.bootstrap.subtitleExtractionAllowed) return;
+  if (!appConfig.subtitles.extractionAllowed) return;
   const uuid = userData.uuid;
   if (!uuid) return;
   // Only our own, demuxable playback URLs (spec §4.2).
