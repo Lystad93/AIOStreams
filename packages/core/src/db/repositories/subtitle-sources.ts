@@ -172,7 +172,9 @@ export const SubtitleSourceRepository = {
   ): Promise<Set<string>> {
     if (filenames.length === 0) return new Set();
     const scope = ownerUuid ? sql` AND created_by = ${ownerUuid}` : sql``;
-    const keys = [...new Set(filenames.map((f) => normaliseReleaseName(f)))].filter(Boolean);
+    const keys = [
+      ...new Set(filenames.map((f) => normaliseReleaseName(f))),
+    ].filter(Boolean);
     const rows = await getDb().query<{
       [k: string]: unknown;
       filename: string;

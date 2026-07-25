@@ -48,12 +48,11 @@ export function estimateEtaSeconds(opts: {
   reuseSource?: boolean;
 }): number {
   if (opts.reuseSource) return TRANSLATION_SEED_SECONDS;
-  const speed = opts.bytesPerSec && opts.bytesPerSec > 0
-    ? opts.bytesPerSec
-    : DEFAULT_BYTES_PER_SEC;
-  const downloadSeconds = opts.fileSizeBytes
-    ? opts.fileSizeBytes / speed
-    : 60;
+  const speed =
+    opts.bytesPerSec && opts.bytesPerSec > 0
+      ? opts.bytesPerSec
+      : DEFAULT_BYTES_PER_SEC;
+  const downloadSeconds = opts.fileSizeBytes ? opts.fileSizeBytes / speed : 60;
   return Math.round(downloadSeconds + TRANSLATION_SEED_SECONDS);
 }
 

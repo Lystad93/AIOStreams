@@ -92,7 +92,10 @@ export async function buildSubtitleSlots(
   }
   // Full-file extraction is the gated, download-heavy half (spec §7).
   if (!appConfig.bootstrap.subtitleExtractionAllowed) {
-    logger.debug({ id }, 'subtitle slots: extraction disabled on this instance');
+    logger.debug(
+      { id },
+      'subtitle slots: extraction disabled on this instance'
+    );
     return [];
   }
   const uuid = userData.uuid;
@@ -201,7 +204,11 @@ export async function buildSubtitleSlots(
     job?.status === 'failed'
       ? `Retry: Translate Exact → ${cfg.targetLanguage} (${eta})`
       : `Translate Exact → ${cfg.targetLanguage} (${eta})`;
-  slots.push({ id: SLOT_ID.trigger, url: slotUrl('exact', token), lang: label });
+  slots.push({
+    id: SLOT_ID.trigger,
+    url: slotUrl('exact', token),
+    lang: label,
+  });
   return slots;
 }
 

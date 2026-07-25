@@ -11,7 +11,10 @@ import { initDb, closeDb } from '../db.js';
 import { SubtitleJobRepository } from './subtitle-jobs.js';
 
 // Temp sqlite file; initDb runs all migrations (incl. 0017_subtitle_jobs).
-const dbFile = path.join(os.tmpdir(), `aios-subtitle-test-${process.pid}.sqlite`);
+const dbFile = path.join(
+  os.tmpdir(),
+  `aios-subtitle-test-${process.pid}.sqlite`
+);
 before(async () => {
   await initDb(`sqlite://${dbFile}`);
 });
@@ -49,7 +52,12 @@ test('subtitle_jobs: write-through lifecycle + SRT download round-trip', async (
     sourceLang: 'English',
     updatedAt: 1100,
   });
-  await SubtitleJobRepository.setExtractedSrt('job-1', 'EXTRACTED SRT', 12, 1200);
+  await SubtitleJobRepository.setExtractedSrt(
+    'job-1',
+    'EXTRACTED SRT',
+    12,
+    1200
+  );
   await SubtitleJobRepository.setTranslatedSrt(
     'job-1',
     'TRANSLATED SRT',
@@ -109,7 +117,9 @@ test('subtitle_jobs: failed job stores error and no translated SRT', async () =>
     createdAt: 2000,
     updatedAt: 2000,
   });
-  const row = (await SubtitleJobRepository.list()).find((r) => r.id === 'job-2');
+  const row = (await SubtitleJobRepository.list()).find(
+    (r) => r.id === 'job-2'
+  );
   assert.ok(row);
   assert.equal(row!.status, 'failed');
   assert.equal(row!.error, 'bitmap only');
@@ -130,7 +140,12 @@ test('filterTranslated: returns only ids with a stored translation', async () =>
     updatedAt: 4000,
   };
   await SubtitleJobRepository.saveMeta({ ...base, id: 'has-srt' });
-  await SubtitleJobRepository.setTranslatedSrt('has-srt', 'NOR SRT', 4100, 5000);
+  await SubtitleJobRepository.setTranslatedSrt(
+    'has-srt',
+    'NOR SRT',
+    4100,
+    5000
+  );
   // Row exists but never produced a translation (e.g. still running / failed).
   await SubtitleJobRepository.saveMeta({
     ...base,
@@ -169,7 +184,12 @@ test('findTranslatedByFilenames: matches the same release across addons, scoped 
     createdAt: 5000,
     updatedAt: 5000,
   });
-  await SubtitleJobRepository.setTranslatedSrt('addon-a', 'NOR SRT', 5100, 1000);
+  await SubtitleJobRepository.setTranslatedSrt(
+    'addon-a',
+    'NOR SRT',
+    5100,
+    1000
+  );
 
   // Addon B serves the same release; only the filename is shared.
   const hit = await SubtitleJobRepository.findTranslatedByFilenames(

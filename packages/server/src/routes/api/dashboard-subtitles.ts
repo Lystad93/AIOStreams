@@ -23,7 +23,9 @@ router.get('/', async (req: Request, res: Response) => {
   ]);
   res
     .status(200)
-    .json(createResponse({ success: true, data: { jobs, total, limit, offset } }));
+    .json(
+      createResponse({ success: true, data: { jobs, total, limit, offset } })
+    );
 });
 
 /** Derive a friendly download filename from the source release name. */
@@ -75,7 +77,9 @@ router.get('/:id/translated.srt', serveSrt('translated'));
 
 router.delete('/:id', async (req: Request<{ id: string }>, res: Response) => {
   await SubtitleJobRepository.delete(req.params.id);
-  res.status(200).json(createResponse({ success: true, data: { deleted: true } }));
+  res
+    .status(200)
+    .json(createResponse({ success: true, data: { deleted: true } }));
 });
 
 export default router;

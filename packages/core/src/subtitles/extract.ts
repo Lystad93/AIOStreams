@@ -64,7 +64,9 @@ function parseFps(rate?: string): number | undefined {
     return undefined;
   }
   const fps = num / den;
-  return fps > 0 && Number.isFinite(fps) ? Math.round(fps * 1000) / 1000 : undefined;
+  return fps > 0 && Number.isFinite(fps)
+    ? Math.round(fps * 1000) / 1000
+    : undefined;
 }
 
 function ffmpegBin(): string {

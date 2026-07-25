@@ -105,12 +105,15 @@ test('reassembleTranslations: maps by index and keeps originals for skipped line
 });
 
 test('reassembleTranslations: ignores out-of-range/garbage indices, unescapes \\n', () => {
-  const { lines, missing } = reassembleTranslations(['a', 'b'], [
-    { i: 0, t: 'x\\ny' },
-    { i: 9, t: 'ignored' },
-    { i: -1, t: 'ignored' },
-    { t: 'no index' } as any,
-  ]);
+  const { lines, missing } = reassembleTranslations(
+    ['a', 'b'],
+    [
+      { i: 0, t: 'x\\ny' },
+      { i: 9, t: 'ignored' },
+      { i: -1, t: 'ignored' },
+      { t: 'no index' } as any,
+    ]
+  );
   assert.equal(lines[0], 'x\ny');
   assert.equal(lines[1], 'b'); // untouched
   assert.equal(missing, 1);
@@ -144,9 +147,7 @@ test('normaliseReleaseName: must NOT merge different release groups', () => {
   // The dangerous case a structural "drop last dash token" rule would break:
   // these are different releases and must keep different keys.
   const a = normaliseReleaseName('FROM.S01E08.2160p.MGMP.WEB-DL.H.265-XEBEC');
-  const b = normaliseReleaseName(
-    'From.S01E08.2160p.STAN.WEB-DL.H.265-Kitsune'
-  );
+  const b = normaliseReleaseName('From.S01E08.2160p.STAN.WEB-DL.H.265-Kitsune');
   assert.notEqual(a, b);
   // A real group must survive even when the name ends in WEB-DL-<group>.
   const withDashDl = normaliseReleaseName('Show.2020.1080p.WEB-DL-Kitsune');
@@ -173,7 +174,10 @@ test('normaliseReleaseName: handles empty/garbage input', () => {
 test('pickSource: honours the user-ordered language priority, demotes forced/SDH', () => {
   const mk = (over: Partial<SubtitleSourceMeta>): SubtitleSourceMeta =>
     ({
-      id: over.lang! + (over.forced ? '-f' : '') + (over.hearingImpaired ? '-s' : ''),
+      id:
+        over.lang! +
+        (over.forced ? '-f' : '') +
+        (over.hearingImpaired ? '-s' : ''),
       filename: 'X.mkv',
       lang: 'English',
       origin: 'extracted',

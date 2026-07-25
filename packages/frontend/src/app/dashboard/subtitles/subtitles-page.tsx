@@ -244,9 +244,9 @@ export function SubtitlesPage() {
       </DashboardQueryBoundary>
 
       <p className="text-xs text-[--muted]">
-        SRT files are stored with each job so they can be re-downloaded here. The
-        extracted file is the original embedded track; the translated file is the
-        machine-translated result served to the player.
+        SRT files are stored with each job so they can be re-downloaded here.
+        The extracted file is the original embedded track; the translated file
+        is the machine-translated result served to the player.
       </p>
 
       <ConfirmationDialog {...confirmDelete} />

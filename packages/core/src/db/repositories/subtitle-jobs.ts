@@ -149,9 +149,9 @@ export const SubtitleJobRepository = {
   },
 
   /** Recent jobs, newest first. Bodies excluded — only their lengths. */
-  async list(opts: { limit?: number; offset?: number } = {}): Promise<
-    SubtitleJobListRow[]
-  > {
+  async list(
+    opts: { limit?: number; offset?: number } = {}
+  ): Promise<SubtitleJobListRow[]> {
     const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500);
     const offset = Math.max(opts.offset ?? 0, 0);
     const rows = await getDb().query<DbRow>(sql`
@@ -176,7 +176,8 @@ export const SubtitleJobRepository = {
     id: string,
     which: 'extracted' | 'translated'
   ): Promise<{ srt: string; filename?: string } | null> {
-    const col = which === 'extracted' ? sql`extracted_srt` : sql`translated_srt`;
+    const col =
+      which === 'extracted' ? sql`extracted_srt` : sql`translated_srt`;
     const row = await getDb().maybeOne<{
       [column: string]: unknown;
       srt: string | null;
@@ -229,7 +230,9 @@ export const SubtitleJobRepository = {
     filenames: string[]
   ): Promise<Map<string, string>> {
     if (filenames.length === 0) return new Map();
-    const keys = [...new Set(filenames.map((f) => normaliseReleaseName(f)))].filter(Boolean);
+    const keys = [
+      ...new Set(filenames.map((f) => normaliseReleaseName(f))),
+    ].filter(Boolean);
     const rows = await getDb().query<{
       [k: string]: unknown;
       id: string;
@@ -280,7 +283,10 @@ export const SubtitleJobRepository = {
 
   /** Cheap check: is a finished translation stored for this job id? */
   async hasTranslated(id: string): Promise<boolean> {
-    const row = await getDb().maybeOne<{ [k: string]: unknown; n: number | string }>(
+    const row = await getDb().maybeOne<{
+      [k: string]: unknown;
+      n: number | string;
+    }>(
       sql`SELECT CASE WHEN translated_srt IS NOT NULL AND LENGTH(translated_srt) > 0
                  THEN 1 ELSE 0 END AS n
           FROM subtitle_jobs WHERE id = ${id}`

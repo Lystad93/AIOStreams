@@ -100,8 +100,7 @@ export async function recordServedReleases(
       // specific depending on which fields the player actually sends back.
       const keys = new Set<string>();
       keys.add(key(uuid, contentId, { size: s.size, filename: s.filename }));
-      if (s.filename)
-        keys.add(key(uuid, contentId, { filename: s.filename }));
+      if (s.filename) keys.add(key(uuid, contentId, { filename: s.filename }));
       if (s.size != null) keys.add(key(uuid, contentId, { size: s.size }));
       await Promise.all(
         [...keys].map((k) => cache().set(k, entry, TTL_SECONDS))

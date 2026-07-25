@@ -167,7 +167,11 @@ export const geminiProvider: TranslationProvider = {
     );
     if (missing > 0) {
       logger.debug(
-        { returned: parsed.translations?.length ?? 0, expected: lines.length, missing },
+        {
+          returned: parsed.translations?.length ?? 0,
+          expected: lines.length,
+          missing,
+        },
         'some subtitle lines were not translated; kept original text'
       );
     }

@@ -137,10 +137,14 @@ router.get(
         return;
       }
 
-      const served = await lookupServedRelease(payload.uuid, payload.contentId, {
-        videoSize: payload.videoSize,
-        filename: payload.filename,
-      });
+      const served = await lookupServedRelease(
+        payload.uuid,
+        payload.contentId,
+        {
+          videoSize: payload.videoSize,
+          filename: payload.filename,
+        }
+      );
       if (!served) {
         sendSrt(
           res,
