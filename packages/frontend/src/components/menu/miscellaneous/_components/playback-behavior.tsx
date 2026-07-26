@@ -288,6 +288,36 @@ export function PlaybackBehavior() {
             }));
           }}
         />
+        <TextInput
+          label="OpenSubtitles username"
+          disabled={!userData.externalSubtitles?.enabled}
+          help="OpenSubtitles downloads use a personal daily quota, so searching works with the instance key but downloading needs your own account."
+          value={userData.externalSubtitles?.opensubtitlesUsername ?? ''}
+          onValueChange={(value) => {
+            setUserData((prev) => ({
+              ...prev,
+              externalSubtitles: {
+                ...prev.externalSubtitles,
+                opensubtitlesUsername: value || undefined,
+              },
+            }));
+          }}
+        />
+        <PasswordInput
+          label="OpenSubtitles password"
+          autoComplete="off"
+          disabled={!userData.externalSubtitles?.enabled}
+          value={userData.externalSubtitles?.opensubtitlesPassword ?? ''}
+          onValueChange={(value) => {
+            setUserData((prev) => ({
+              ...prev,
+              externalSubtitles: {
+                ...prev.externalSubtitles,
+                opensubtitlesPassword: value || undefined,
+              },
+            }));
+          }}
+        />
       </SettingsCard>
 
       <SettingsCard

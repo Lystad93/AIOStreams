@@ -817,6 +817,14 @@ export const UserDataSchema = z.object({
       /** Per-user keys; fall back to the instance-wide ones when unset. */
       subsourceApiKey: z.string().optional(),
       subdlApiKey: z.string().optional(),
+      /** Optional per-user OpenSubtitles app key. */
+      opensubtitlesApiKey: z.string().optional(),
+      /**
+       * OpenSubtitles downloads draw on a personal daily quota, so they need
+       * this user's own login — the instance key alone cannot download.
+       */
+      opensubtitlesUsername: z.string().optional(),
+      opensubtitlesPassword: z.string().optional(),
     })
     .optional(),
   autoPlay: z

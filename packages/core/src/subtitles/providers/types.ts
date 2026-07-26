@@ -6,7 +6,7 @@
  * clients normalise into this one shape and the matcher works against it alone.
  */
 
-export type ExternalProviderId = 'subsource' | 'subdl';
+export type ExternalProviderId = 'subsource' | 'subdl' | 'opensubtitles';
 
 export interface ExternalSearchQuery {
   /** `tt`-prefixed IMDb id of the title. */
@@ -17,6 +17,8 @@ export interface ExternalSearchQuery {
   languages: string[];
   /** The release we're matching against, for providers that can filter on it. */
   filename?: string;
+  /** OpenSubtitles-style hash of the video, when the player supplied one. */
+  movieHash?: string;
 }
 
 export interface ExternalSubtitleCandidate {
@@ -39,6 +41,8 @@ export interface ExternalSubtitleCandidate {
   episode?: number;
   /** Opaque download reference (URL or id) — provider-specific. */
   downloadRef: string;
+  /** The provider matched this against the video's own hash: exact file. */
+  moviehashMatched?: boolean;
 }
 
 /**
@@ -48,6 +52,11 @@ export interface ExternalSubtitleCandidate {
 export interface ProviderCredentials {
   subsource?: string;
   subdl?: string;
+  /** App-level key: enough to SEARCH OpenSubtitles. */
+  opensubtitlesApiKey?: string;
+  /** Per-user login: required to DOWNLOAD (quota is per account). */
+  opensubtitlesUsername?: string;
+  opensubtitlesPassword?: string;
 }
 
 export interface SubtitleProviderClient {

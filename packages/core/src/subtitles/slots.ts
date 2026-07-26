@@ -37,6 +37,7 @@ import {
   findExternalSubtitles,
   type ScoredSubtitle,
 } from './providers/index.js';
+import type { ProviderCredentials } from './providers/types.js';
 import { PLAYBACK_PATH_PREFIX } from '../debrid/utils.js';
 import type { SubtitleJob, SubtitleJobKey } from './types.js';
 
@@ -184,7 +185,8 @@ export async function buildSubtitleSlots(
     id,
     cfg.targetLanguage,
     served.filename,
-    key
+    key,
+    served.durationMs
   ));
   if (durableDone) {
     slots.push({
@@ -239,7 +241,7 @@ export async function buildSubtitleSlots(
  */
 export function resolveExternalConfig(userData: UserData): {
   languages: string[];
-  creds: { subsource?: string; subdl?: string };
+  creds: ProviderCredentials;
 } | null {
   if (!appConfig.subtitles.externalEnabled) return null;
   const ext = userData.externalSubtitles;
@@ -265,6 +267,9 @@ export function resolveExternalConfig(userData: UserData): {
     creds: {
       subsource: ext?.subsourceApiKey,
       subdl: ext?.subdlApiKey,
+      opensubtitlesApiKey: ext?.opensubtitlesApiKey,
+      opensubtitlesUsername: ext?.opensubtitlesUsername,
+      opensubtitlesPassword: ext?.opensubtitlesPassword,
     },
   };
 }
@@ -349,10 +354,7 @@ export async function buildExternalSlots(
       lang: match.candidate.lang,
       // Carried so the (unauthenticated) download route can use this user's own
       // provider keys; the token is encrypted, so they aren't exposed.
-      creds:
-        creds.subsource || creds.subdl
-          ? { subsource: creds.subsource, subdl: creds.subdl }
-          : undefined,
+      creds: Object.values(creds).some(Boolean) ? creds : undefined,
     });
     if (!token) continue;
     // The tier matters more than the number: an exact match is evidence, a
@@ -454,7 +456,13 @@ export function externalJobHash(provider: string, ref: string): string {
 export async function markTranslatedStreams(
   userData: UserData,
   contentId: string,
-  streams: { size?: number; filename?: string; subtitleTranslated?: boolean }[]
+  streams: {
+    size?: number;
+    filename?: string;
+    /** Runtime in ms, as carried on ParsedStream. */
+    duration?: number;
+    subtitleTranslated?: boolean;
+  }[]
 ): Promise<void> {
   const cfg = resolveSubtitleConfig(userData);
   if (!cfg) return;
@@ -482,6 +490,29 @@ export async function markTranslatedStreams(
     for (const s of byFilename.get(filename) ?? []) {
       s.subtitleTranslated = true;
     }
+  }
+
+  // Also flag releases whose runtime matches a translation already in the
+  // library, even though their names differ — those play with it as-is.
+  const stillUnflagged = streams.filter(
+    (s) => !s.subtitleTranslated && s.duration && s.duration > 0
+  );
+  if (stillUnflagged.length === 0) return;
+  const checked = new Map<number, boolean>();
+  for (const s of stillUnflagged) {
+    const durationMs = s.duration!;
+    let hit = checked.get(durationMs);
+    if (hit === undefined) {
+      hit = !!(await SubtitleJobRepository.findTranslatedByDuration(
+        uuid,
+        contentId,
+        cfg.targetLanguage,
+        durationMs,
+        durationToleranceMs(durationMs)
+      ));
+      checked.set(durationMs, hit);
+    }
+    if (hit) s.subtitleTranslated = true;
   }
 }
 
@@ -573,7 +604,8 @@ async function storedTranslationId(
   contentId: string,
   targetLang: string,
   filename: string | undefined,
-  key: SubtitleJobKey
+  key: SubtitleJobKey,
+  durationMs?: number
 ): Promise<string | undefined> {
   if (filename) {
     const found = await SubtitleJobRepository.findTranslatedByFilenames(
@@ -586,7 +618,29 @@ async function storedTranslationId(
     if (id) return id;
   }
   const own = jobId(key);
-  return (await SubtitleJobRepository.hasTranslated(own)) ? own : undefined;
+  if (await SubtitleJobRepository.hasTranslated(own)) return own;
+
+  // Last resort, and the one that makes a library subtitle reusable: a
+  // translation made for a DIFFERENT release of this title whose runtime
+  // matches. Releases that differ only cosmetically share subtitle timing.
+  if (durationMs) {
+    return SubtitleJobRepository.findTranslatedByDuration(
+      uuid,
+      contentId,
+      targetLang,
+      durationMs,
+      durationToleranceMs(durationMs)
+    );
+  }
+  return undefined;
+}
+
+/** The spec's `max(N seconds, X% of runtime)` tolerance, from config. */
+export function durationToleranceMs(durationMs: number): number {
+  return Math.max(
+    appConfig.subtitles.durationToleranceSeconds * 1000,
+    (durationMs * appConfig.subtitles.durationTolerancePercent) / 100
+  );
 }
 
 /** Convenience for the route: the finished SRT for this key, if one exists. */
@@ -603,12 +657,18 @@ export async function getFinishedResult(
   if (byResultId) return byResultId;
   // Durable fallback: the permanent DB record outlives the result cache TTL,
   // and resolves a translation made from another addon's copy of the release.
+  // Resolve the release's runtime so a translation made for a different but
+  // equally-long release still serves.
+  const served = filename
+    ? await lookupServedRelease(key.uuid, key.contentId, { filename })
+    : undefined;
   const id = await storedTranslationId(
     key.uuid,
     key.contentId,
     key.targetLang,
     filename,
-    key
+    key,
+    served?.durationMs
   );
   if (!id) return undefined;
   const stored = await SubtitleJobRepository.getSrt(id, 'translated');

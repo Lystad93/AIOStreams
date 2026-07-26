@@ -49,8 +49,14 @@ export interface ExternalSubtitleTokenPayload {
   season?: number;
   episode?: number;
   lang: string;
-  /** Per-user provider keys, when they differ from the instance ones. */
-  creds?: { subsource?: string; subdl?: string };
+  /** Per-user provider credentials, when set. */
+  creds?: {
+    subsource?: string;
+    subdl?: string;
+    opensubtitlesApiKey?: string;
+    opensubtitlesUsername?: string;
+    opensubtitlesPassword?: string;
+  };
 }
 
 export function encodeExternalToken(

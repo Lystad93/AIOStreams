@@ -140,6 +140,7 @@ async function persistMeta(
       status,
       filename: input.filename,
       videoSize: input.videoSize,
+      releaseDurationMs: input.durationMs,
       provider: input.providerId,
       model: input.model,
       error: extra?.error,

@@ -16,6 +16,7 @@ import { normaliseReleaseName } from '../release-name.js';
 import type { ReleaseDurationIndex } from '../release-lookup.js';
 import { subsourceClient } from './subsource.js';
 import { subdlClient } from './subdl.js';
+import { opensubtitlesClient } from './opensubtitles.js';
 import type {
   ExternalSearchQuery,
   ExternalSubtitleCandidate,
@@ -26,7 +27,11 @@ import type {
 
 const logger = createLogger('subtitles');
 
-const CLIENTS: SubtitleProviderClient[] = [subsourceClient, subdlClient];
+const CLIENTS: SubtitleProviderClient[] = [
+  subsourceClient,
+  subdlClient,
+  opensubtitlesClient,
+];
 
 export interface ScoredSubtitle {
   candidate: ExternalSubtitleCandidate;
@@ -80,13 +85,14 @@ export async function findExternalSubtitles(
   const clients = configuredProviders(creds);
   if (clients.length === 0) return [];
 
-  // Results are already constrained to the right title/season/episode by the
-  // query, so the score measures how closely the RELEASE matches — i.e. how
-  // likely the timing lines up — not whether it's the right content. A
-  // different release of the same episode is still often usable (and is a fine
-  // translation source), so the floor only drops results that barely resemble
-  // ours at all.
-  const minScore = opts.minScore ?? 30;
+  // No floor by default. Every result is already constrained to the right
+  // title (and episode) by the query, so a low score never means "wrong
+  // content" — only "a different release, so the timing may differ". Hiding
+  // those was wrong: subtitle sites routinely carry entirely different releases
+  // than a usenet/debrid stream list (e.g. only 1080p WEB-DL entries when you
+  // are playing a 2160p one), which scored every candidate below the old floor
+  // and left the menu empty. Rank them honestly instead.
+  const minScore = opts.minScore ?? 0;
   const limit = opts.limit ?? 3;
 
   const results = await Promise.all(
@@ -131,7 +137,8 @@ export async function findExternalSubtitles(
     }
     const { score, tier } = scoreRelease(
       query.filename,
-      candidate.releaseNames
+      candidate.releaseNames,
+      { moviehashMatched: candidate.moviehashMatched }
     );
 
     // Does any release this subtitle claims run for the same time as ours? The
@@ -269,6 +276,6 @@ export async function downloadExternalSubtitle(args: {
   return srt;
 }
 
-export { subsourceClient, subdlClient };
+export { subsourceClient, subdlClient, opensubtitlesClient };
 export * from './types.js';
 export { readZipEntries, subtitleEntries } from './zip.js';

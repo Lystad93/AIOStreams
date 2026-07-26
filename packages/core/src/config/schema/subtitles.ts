@@ -81,6 +81,16 @@ export const subtitlesSchema = {
     requiresRestart: true,
     secret: false,
   },
+  opensubtitlesApiKey: {
+    schema: z.string(),
+    default: '',
+    label: 'OpenSubtitles API key',
+    description:
+      'App key for [OpenSubtitles](https://www.opensubtitles.com/en/consumers). This is enough to SEARCH. Downloading counts against a personal daily quota, so each user must also supply their own OpenSubtitles username and password in their settings — the instance key is never used to spend someone else’s quota.',
+    env: 'SUBTITLE_OPENSUBTITLES_API_KEY',
+    requiresRestart: false,
+    secret: true,
+  },
   durationToleranceSeconds: {
     schema: nonNegativeInt,
     default: 60,

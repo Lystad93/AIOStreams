@@ -27,6 +27,8 @@ export interface SubtitleJobMeta {
   createdAt: number;
   updatedAt: number;
   completedAt?: number;
+  /** Runtime of the release this job was made for, in ms. */
+  releaseDurationMs?: number;
 }
 
 /** A list row: metadata plus which SRTs exist and their sizes (not bodies). */
@@ -98,14 +100,15 @@ export const SubtitleJobRepository = {
       INSERT INTO subtitle_jobs (
         id, uuid, content_id, release_hash, source_path, target_lang,
         source_lang, status, filename, video_size, provider, model, error,
-        created_at, updated_at, completed_at, match_key
+        created_at, updated_at, completed_at, match_key, release_duration_ms
       ) VALUES (
         ${meta.id}, ${meta.uuid}, ${meta.contentId}, ${meta.releaseHash},
         ${meta.sourcePath}, ${meta.targetLang}, ${meta.sourceLang ?? null},
         ${meta.status}, ${meta.filename ?? null}, ${meta.videoSize ?? null},
         ${meta.provider ?? null}, ${meta.model ?? null}, ${meta.error ?? null},
         ${meta.createdAt}, ${meta.updatedAt}, ${meta.completedAt ?? null},
-        ${normaliseReleaseName(meta.filename) || null}
+        ${normaliseReleaseName(meta.filename) || null},
+        ${meta.releaseDurationMs ?? null}
       )
       ON CONFLICT (id) DO UPDATE SET
         source_lang = ${meta.sourceLang ?? null},
@@ -117,7 +120,8 @@ export const SubtitleJobRepository = {
         error = ${meta.error ?? null},
         updated_at = ${meta.updatedAt},
         completed_at = ${meta.completedAt ?? null},
-        match_key = ${normaliseReleaseName(meta.filename) || null}
+        match_key = ${normaliseReleaseName(meta.filename) || null},
+        release_duration_ms = ${meta.releaseDurationMs ?? null}
     `);
   },
 
@@ -279,6 +283,41 @@ export const SubtitleJobRepository = {
         AND id IN (${join(ids.map((id) => sql`${id}`))})
     `);
     return new Set(rows.map((r) => r.id));
+  },
+
+  /**
+   * A finished translation for this title in this language whose release runs
+   * the same length as the one being played.
+   *
+   * This is what makes an already-translated subtitle reusable across releases
+   * that differ only cosmetically — the runtime, not the name, is what decides
+   * whether the timing fits.
+   */
+  async findTranslatedByDuration(
+    uuid: string,
+    contentId: string,
+    targetLang: string,
+    durationMs: number,
+    toleranceMs: number
+  ): Promise<string | undefined> {
+    if (!durationMs || durationMs <= 0) return undefined;
+    const row = await getDb().maybeOne<{
+      [k: string]: unknown;
+      id: string;
+    }>(sql`
+      SELECT id FROM subtitle_jobs
+      WHERE uuid = ${uuid}
+        AND content_id = ${contentId}
+        AND target_lang = ${targetLang}
+        AND translated_srt IS NOT NULL
+        AND LENGTH(translated_srt) > 0
+        AND release_duration_ms IS NOT NULL
+        AND release_duration_ms BETWEEN ${durationMs - toleranceMs}
+                                    AND ${durationMs + toleranceMs}
+      ORDER BY completed_at DESC
+      LIMIT 1
+    `);
+    return row?.id;
   },
 
   /** Cheap check: is a finished translation stored for this job id? */
