@@ -8,6 +8,7 @@ import { TextInput } from '../../../ui/text-input/text-input';
 import { PasswordInput } from '../../../ui/password-input/password-input';
 import { SortableList } from '../../../shared/sortable-list';
 import { Alert } from '../../../ui/alert';
+import { TranslationProviders } from './translation-providers';
 import {
   AUTO_PLAY_ATTRIBUTES,
   DEFAULT_AUTO_PLAY_ATTRIBUTES,
@@ -317,7 +318,7 @@ export function PlaybackBehavior() {
           }}
         />
         <PasswordInput
-          label="SubSource API key (optional)"
+          label="SubSource API key"
           autoComplete="off"
           disabled={!userData.externalSubtitles?.enabled}
           help="Your own key. Leave blank to use the one configured by this instance's owner."
@@ -333,7 +334,7 @@ export function PlaybackBehavior() {
           }}
         />
         <PasswordInput
-          label="SubDL API key (optional)"
+          label="SubDL API key"
           autoComplete="off"
           disabled={!userData.externalSubtitles?.enabled}
           help="Your own key. Leave blank to use the one configured by this instance's owner."
@@ -416,36 +417,8 @@ export function PlaybackBehavior() {
             }));
           }}
         />
-        <Select
-          label="Provider"
+        <TranslationProviders
           disabled={!userData.subtitleTranslation?.enabled}
-          options={[{ label: 'Google Gemini', value: 'gemini' }]}
-          value={userData.subtitleTranslation?.provider || 'gemini'}
-          onValueChange={(value) => {
-            setUserData((prev) => ({
-              ...prev,
-              subtitleTranslation: {
-                ...prev.subtitleTranslation,
-                provider: value as 'gemini',
-              },
-            }));
-          }}
-        />
-        <PasswordInput
-          label="API Key"
-          autoComplete="off"
-          disabled={!userData.subtitleTranslation?.enabled}
-          help="Your own provider API key. Stored with your configuration and never shared."
-          value={userData.subtitleTranslation?.apiKey ?? ''}
-          onValueChange={(value) => {
-            setUserData((prev) => ({
-              ...prev,
-              subtitleTranslation: {
-                ...prev.subtitleTranslation,
-                apiKey: value,
-              },
-            }));
-          }}
         />
         <Select
           label="Translate into"
@@ -510,22 +483,6 @@ export function PlaybackBehavior() {
             />
           </div>
         )}
-        <TextInput
-          label="Model (optional)"
-          disabled={!userData.subtitleTranslation?.enabled}
-          placeholder="gemini-flash-lite-latest"
-          help="Override the translation model. Leave blank for the provider default."
-          value={userData.subtitleTranslation?.model ?? ''}
-          onValueChange={(value) => {
-            setUserData((prev) => ({
-              ...prev,
-              subtitleTranslation: {
-                ...prev.subtitleTranslation,
-                model: value || undefined,
-              },
-            }));
-          }}
-        />
         <Switch
           label="Pre-translate next episode"
           side="right"

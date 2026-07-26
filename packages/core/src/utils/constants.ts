@@ -1634,6 +1634,79 @@ export const SNIPPETS = [
   },
 ];
 
+/**
+ * LLM providers usable for subtitle translation, in the order they're offered.
+ *
+ * Everything except Gemini and Anthropic speaks the OpenAI chat-completions
+ * shape, so one adapter covers them — they differ only by base URL and default
+ * model. `custom` exists for self-hosted/OpenAI-compatible endpoints (Ollama,
+ * LM Studio, LiteLLM), which is why it alone asks for a base URL.
+ */
+export const TRANSLATION_PROVIDERS = {
+  gemini: {
+    name: 'Google Gemini',
+    api: 'gemini' as const,
+    defaultModel: 'gemini-flash-lite-latest',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    signUpUrl: 'https://aistudio.google.com/apikey',
+    needsBaseUrl: false,
+  },
+  anthropic: {
+    name: 'Anthropic',
+    api: 'anthropic' as const,
+    defaultModel: 'claude-haiku-4-5-20251001',
+    baseUrl: 'https://api.anthropic.com/v1',
+    signUpUrl: 'https://console.anthropic.com/settings/keys',
+    needsBaseUrl: false,
+  },
+  openai: {
+    name: 'OpenAI',
+    api: 'openai' as const,
+    defaultModel: 'gpt-4o-mini',
+    baseUrl: 'https://api.openai.com/v1',
+    signUpUrl: 'https://platform.openai.com/api-keys',
+    needsBaseUrl: false,
+  },
+  openrouter: {
+    name: 'OpenRouter',
+    api: 'openai' as const,
+    defaultModel: 'meta-llama/llama-3.3-70b-instruct',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    signUpUrl: 'https://openrouter.ai/keys',
+    needsBaseUrl: false,
+  },
+  groq: {
+    name: 'Groq',
+    api: 'openai' as const,
+    defaultModel: 'llama-3.3-70b-versatile',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    signUpUrl: 'https://console.groq.com/keys',
+    needsBaseUrl: false,
+  },
+  deepseek: {
+    name: 'DeepSeek',
+    api: 'openai' as const,
+    defaultModel: 'deepseek-chat',
+    baseUrl: 'https://api.deepseek.com/v1',
+    signUpUrl: 'https://platform.deepseek.com/api_keys',
+    needsBaseUrl: false,
+  },
+  custom: {
+    name: 'Custom (OpenAI-compatible)',
+    api: 'openai' as const,
+    defaultModel: '',
+    baseUrl: '',
+    signUpUrl: '',
+    needsBaseUrl: true,
+  },
+} as const;
+
+export type TranslationProviderId = keyof typeof TRANSLATION_PROVIDERS;
+
+export const TRANSLATION_PROVIDER_IDS = Object.keys(
+  TRANSLATION_PROVIDERS
+) as TranslationProviderId[];
+
 export {
   API_VERSION,
   SERVICES,

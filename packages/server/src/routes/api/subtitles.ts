@@ -231,6 +231,7 @@ router.get(
           apiKey: cfg.apiKey,
           providerId: cfg.provider,
           model: cfg.model,
+          providerChain: cfg.providers,
           filename: payload.filename,
           now,
         });
@@ -287,6 +288,7 @@ router.get(
         apiKey: cfg.apiKey,
         providerId: cfg.provider,
         model: cfg.model,
+        providerChain: cfg.providers,
         filename: served.filename,
         videoSize: served.size,
         durationMs: served.durationMs,

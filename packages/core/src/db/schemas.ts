@@ -804,9 +804,33 @@ export const UserDataSchema = z.object({
       sourceLanguages: z.array(z.string().min(1)).optional(),
       // The language to translate INTO.
       targetLanguage: z.string().min(1).optional(),
-      provider: z.enum(['gemini']).optional(),
+      /**
+       * Legacy single-provider fields, kept so existing configs keep working.
+       * `providers` below supersedes them; when it is empty these are read as a
+       * one-entry list (see `resolveTranslationProviders`).
+       */
+      provider: z.string().optional(),
       apiKey: z.string().optional(),
       model: z.string().optional(),
+      /**
+       * Providers in priority order — first is tried first, and the next takes
+       * over when one is rate-limited or erroring. Order is the whole point, so
+       * this is an array rather than a keyed object.
+       */
+      providers: z
+        .array(
+          z.object({
+            id: z.enum(
+              constants.TRANSLATION_PROVIDER_IDS as [string, ...string[]]
+            ),
+            enabled: z.boolean().optional(),
+            apiKey: z.string().optional(),
+            model: z.string().optional(),
+            /** Only meaningful for OpenAI-compatible/self-hosted endpoints. */
+            baseUrl: z.string().optional(),
+          })
+        )
+        .optional(),
       // Pre-translate the next episode alongside AIOStreams' existing
       // precache-next-episode feature, so a binge-watcher lands on an
       // already-translated subtitle (spec §6). Only runs when BOTH this and

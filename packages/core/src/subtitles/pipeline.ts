@@ -16,7 +16,7 @@ import type {
 } from './providers/types.js';
 import { parseSrt, serializeSrt } from './srt.js';
 import {
-  translateCues,
+  translateCuesWithFailover,
   getTranslationProvider,
   type TranslationProvider,
 } from './translate.js';
@@ -91,6 +91,16 @@ export interface RunJobInput {
   targetLanguage: string;
   apiKey: string;
   providerId: string;
+  /**
+   * Providers in priority order. When present this supersedes the single
+   * `providerId`/`apiKey`/`model` above, which stay for older callers.
+   */
+  providerChain?: {
+    id: string;
+    apiKey: string;
+    model?: string;
+    baseUrl?: string;
+  }[];
   model?: string;
   /** Original release filename/size, recorded in the durable dashboard store. */
   filename?: string;
@@ -313,18 +323,23 @@ async function finishTranslation(args: {
     { cues: cues.length, source: sourceLang, target: job.targetLang },
     'translating subtitle'
   );
-  const translated = await translateCues(
-    {
-      cues,
-      sourceLang: sourceLang
-        ? (normaliseLanguage(sourceLang) ?? sourceLang)
-        : undefined,
-      targetLang: input.targetLanguage,
-      apiKey: input.apiKey,
-      model: input.model,
-    },
-    provider
-  );
+  const chain = (
+    input.providerChain?.length
+      ? input.providerChain
+      : [{ id: input.providerId, apiKey: input.apiKey, model: input.model }]
+  ).map((p) => ({
+    provider: getTranslationProvider(p.id),
+    apiKey: p.apiKey,
+    model: p.model,
+    baseUrl: p.baseUrl,
+  }));
+  const translated = await translateCuesWithFailover(cues, {
+    sourceLang: sourceLang
+      ? (normaliseLanguage(sourceLang) ?? sourceLang)
+      : undefined,
+    targetLang: input.targetLanguage,
+    providers: chain,
+  });
 
   const outSrt = serializeSrt(translated);
   const rid = resultId(job);

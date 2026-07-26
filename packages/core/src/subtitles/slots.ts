@@ -73,23 +73,72 @@ function slotUrl(
  * can't run (disabled globally/for-user, missing key/target). Centralises the
  * gating so both the slot builder and the job endpoint agree.
  */
+export interface ResolvedTranslationProvider {
+  id: string;
+  apiKey: string;
+  model?: string;
+  baseUrl?: string;
+}
+
+/**
+ * The user's LLM providers, in the order failover should try them.
+ *
+ * Only enabled entries with a key survive — a provider with no key would fail
+ * on its first call and simply waste a batch's latency before falling over.
+ * Falls back to the legacy single-provider fields so configs written before
+ * multi-provider support keep working untouched.
+ */
+export function resolveTranslationProviders(
+  userData: UserData
+): ResolvedTranslationProvider[] {
+  const cfg = userData.subtitleTranslation;
+  if (!cfg) return [];
+
+  const list = (cfg.providers ?? [])
+    .filter((p) => p.enabled !== false && p.apiKey?.trim())
+    .map((p) => ({
+      id: p.id,
+      apiKey: p.apiKey!.trim(),
+      model: p.model?.trim() || undefined,
+      baseUrl: p.baseUrl?.trim() || undefined,
+    }));
+  if (list.length > 0) return list;
+
+  return cfg.apiKey?.trim()
+    ? [
+        {
+          id: cfg.provider ?? 'gemini',
+          apiKey: cfg.apiKey.trim(),
+          model: cfg.model?.trim() || undefined,
+        },
+      ]
+    : [];
+}
+
 export function resolveSubtitleConfig(userData: UserData): {
   sourceLanguages: string[];
   targetLanguage: string;
   apiKey: string;
   provider: string;
   model?: string;
+  providers: ResolvedTranslationProvider[];
 } | null {
   if (!appConfig.subtitles.translationEnabled) return null;
   const cfg = userData.subtitleTranslation;
   if (!cfg?.enabled) return null;
-  if (!cfg.apiKey || !cfg.targetLanguage) return null;
+  if (!cfg.targetLanguage) return null;
+  // At least one usable provider — the legacy `apiKey` check generalised.
+  const providers = resolveTranslationProviders(userData);
+  if (providers.length === 0) return null;
   return {
     sourceLanguages: cfg.sourceLanguages ?? [],
     targetLanguage: cfg.targetLanguage,
-    apiKey: cfg.apiKey,
-    provider: cfg.provider ?? 'gemini',
-    model: cfg.model,
+    // Kept for callers still passing a single provider; always the first of the
+    // chain so the two can never disagree about what runs first.
+    apiKey: providers[0].apiKey,
+    provider: providers[0].id,
+    model: providers[0].model,
+    providers,
   };
 }
 
@@ -664,6 +713,7 @@ export async function precacheTranslateExact(
     apiKey: cfg.apiKey,
     providerId: cfg.provider,
     model: cfg.model,
+    providerChain: cfg.providers,
     filename: stream.filename,
     videoSize: stream.size,
     now,
