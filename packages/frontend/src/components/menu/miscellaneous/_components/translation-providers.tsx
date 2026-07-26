@@ -203,9 +203,8 @@ function ProviderRow({
           )}
         </div>
         <span className="text-xs text-[--muted] font-normal line-clamp-1">
-          {provider.model?.trim() ||
-            meta.defaultModel ||
-            'Set a model in settings'}
+          {provider.model?.trim() || meta.defaultModel || 'No model set'}
+          {meta.freeTier ? ` · ${meta.freeTier}` : ''}
         </span>
       </div>
       <div className="flex items-center gap-2 shrink-0">
@@ -301,17 +300,26 @@ function ProviderModal({
           });
         }}
       >
+        {meta.freeTier && (
+          <p className="text-xs text-[--muted]">{meta.freeTier}</p>
+        )}
         <PasswordInput
           label="API key"
           autoComplete="off"
-          help={
-            meta.signUpUrl
-              ? `Your own key, stored with your configuration and never shared. Get one at ${meta.signUpUrl}`
-              : 'Your own key, stored with your configuration and never shared.'
-          }
+          help="Your own key, stored with your configuration and never shared."
           value={values.apiKey ?? ''}
           onValueChange={(v) => setValues((prev) => ({ ...prev, apiKey: v }))}
         />
+        {meta.signUpUrl && (
+          <a
+            href={meta.signUpUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-[--brand] hover:text-[--brand]/80 hover:underline"
+          >
+            Get a {meta.name} API key →
+          </a>
+        )}
         {meta.needsBaseUrl && (
           <TextInput
             label="Base URL"

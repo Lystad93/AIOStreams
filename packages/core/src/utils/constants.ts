@@ -1649,6 +1649,7 @@ export const TRANSLATION_PROVIDERS = {
     defaultModel: 'gemini-flash-lite-latest',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
     signUpUrl: 'https://aistudio.google.com/apikey',
+    freeTier: 'Free tier ~1,500 requests/day (~100 movies)',
     needsBaseUrl: false,
   },
   anthropic: {
@@ -1657,6 +1658,7 @@ export const TRANSLATION_PROVIDERS = {
     defaultModel: 'claude-haiku-4-5-20251001',
     baseUrl: 'https://api.anthropic.com/v1',
     signUpUrl: 'https://console.anthropic.com/settings/keys',
+    freeTier: 'Paid — no free tier',
     needsBaseUrl: false,
   },
   openai: {
@@ -1665,6 +1667,7 @@ export const TRANSLATION_PROVIDERS = {
     defaultModel: 'gpt-4o-mini',
     baseUrl: 'https://api.openai.com/v1',
     signUpUrl: 'https://platform.openai.com/api-keys',
+    freeTier: 'Paid — no free tier',
     needsBaseUrl: false,
   },
   openrouter: {
@@ -1673,6 +1676,7 @@ export const TRANSLATION_PROVIDERS = {
     defaultModel: 'meta-llama/llama-3.3-70b-instruct',
     baseUrl: 'https://openrouter.ai/api/v1',
     signUpUrl: 'https://openrouter.ai/keys',
+    freeTier: 'Free with a :free model id, e.g. deepseek/deepseek-r1:free',
     needsBaseUrl: false,
   },
   groq: {
@@ -1681,6 +1685,25 @@ export const TRANSLATION_PROVIDERS = {
     defaultModel: 'llama-3.3-70b-versatile',
     baseUrl: 'https://api.groq.com/openai/v1',
     signUpUrl: 'https://console.groq.com/keys',
+    freeTier: 'Free tier ~100K tokens/day (~2 movies) on 70B models',
+    needsBaseUrl: false,
+  },
+  mistral: {
+    name: 'Mistral',
+    api: 'openai' as const,
+    defaultModel: 'mistral-small-latest',
+    baseUrl: 'https://api.mistral.ai/v1',
+    signUpUrl: 'https://console.mistral.ai/api-keys',
+    freeTier: '~1B tokens/month — effectively unlimited here',
+    needsBaseUrl: false,
+  },
+  cerebras: {
+    name: 'Cerebras',
+    api: 'openai' as const,
+    defaultModel: 'llama-3.3-70b',
+    baseUrl: 'https://api.cerebras.ai/v1',
+    signUpUrl: 'https://cloud.cerebras.ai/',
+    freeTier: '~1M tokens/day (~20 movies) — the fastest option',
     needsBaseUrl: false,
   },
   deepseek: {
@@ -1689,6 +1712,7 @@ export const TRANSLATION_PROVIDERS = {
     defaultModel: 'deepseek-chat',
     baseUrl: 'https://api.deepseek.com/v1',
     signUpUrl: 'https://platform.deepseek.com/api_keys',
+    freeTier: 'Paid, but very cheap',
     needsBaseUrl: false,
   },
   custom: {
@@ -1697,6 +1721,7 @@ export const TRANSLATION_PROVIDERS = {
     defaultModel: '',
     baseUrl: '',
     signUpUrl: '',
+    freeTier: 'Depends on your endpoint',
     needsBaseUrl: true,
   },
 } as const;
