@@ -327,6 +327,10 @@ export async function buildExternalSlots(
       { imdbId, season, episode, languages, filename },
       {
         creds,
+        limit: Math.max(
+          appConfig.subtitles.externalUseLimit,
+          appConfig.subtitles.externalTranslateLimit
+        ),
         duration: {
           ourDurationMs,
           index: durationIndex,
@@ -343,8 +347,14 @@ export async function buildExternalSlots(
   const translation = resolveSubtitleConfig(userData);
   const encryptedPassword = userData.encryptedPassword;
 
+  const useLimit = appConfig.subtitles.externalUseLimit;
+  const translateLimit = appConfig.subtitles.externalTranslateLimit;
+  let usedCount = 0;
+  let translateCount = 0;
+
   const slots: Subtitle[] = [];
   for (const [i, match] of matches.entries()) {
+    if (usedCount >= useLimit && translateCount >= translateLimit) break;
     const token = encodeExternalToken({
       provider: match.candidate.provider,
       ref: match.candidate.downloadRef,
@@ -373,11 +383,14 @@ export async function buildExternalSlots(
     }`;
 
     // 1. Use it as-is — plays immediately, costs nothing.
-    slots.push({
-      id: `aiostreams-external-use-${match.candidate.provider}-${i}`,
-      url: slotUrl('external', token),
-      lang: `Use: ${label}${duration} (${provider})`,
-    });
+    if (usedCount < useLimit) {
+      usedCount++;
+      slots.push({
+        id: `aiostreams-external-use-${match.candidate.provider}-${i}`,
+        url: slotUrl('external', token),
+        lang: `Use: ${label}${duration} (${provider})`,
+      });
+    }
 
     // 2. Translate it — same match, but run through the LLM into the target
     // language. Needs no video download, so it's far cheaper than extraction.
@@ -386,7 +399,12 @@ export async function buildExternalSlots(
       (normaliseLanguage(match.candidate.lang) ?? match.candidate.lang) ===
         (normaliseLanguage(translation.targetLanguage) ??
           translation.targetLanguage);
-    if (translation && !sameLanguage && encryptedPassword) {
+    if (
+      translation &&
+      !sameLanguage &&
+      encryptedPassword &&
+      translateCount < translateLimit
+    ) {
       const jobToken = encodeSubtitleToken({
         uuid,
         encryptedPassword,
@@ -403,6 +421,7 @@ export async function buildExternalSlots(
         },
       });
       if (jobToken) {
+        translateCount++;
         const key: SubtitleJobKey = {
           uuid,
           contentId,

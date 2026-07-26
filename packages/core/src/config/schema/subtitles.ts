@@ -71,6 +71,26 @@ export const subtitlesSchema = {
     requiresRestart: false,
     secret: true,
   },
+  externalUseLimit: {
+    schema: nonNegativeInt,
+    default: 3,
+    label: 'External subtitles to offer (use as-is)',
+    description:
+      'How many matched external subtitles to list for playing directly, best match first. Set 0 to hide them and leave only the translate entries.',
+    env: 'SUBTITLE_EXTERNAL_USE_LIMIT',
+    requiresRestart: false,
+    secret: false,
+  },
+  externalTranslateLimit: {
+    schema: nonNegativeInt,
+    default: 3,
+    label: 'External subtitles to offer (translate)',
+    description:
+      'How many matched external subtitles to offer translating into your target language. Counted separately from the entries above, so you can list several to use but only translate the best one. Set 0 to hide them.',
+    env: 'SUBTITLE_EXTERNAL_TRANSLATE_LIMIT',
+    requiresRestart: false,
+    secret: false,
+  },
   externalCacheSize: {
     schema: nonNegativeInt,
     default: 500,

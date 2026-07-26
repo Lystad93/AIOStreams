@@ -272,6 +272,16 @@ const DeduplicatorOptions = z.object({
       enabled: z.boolean().optional(),
       failoverVariants: z.boolean().optional(), // harvest same-release failover URLs
       fields: z.array(z.enum(constants.DEDUPLICATOR_MERGE_FIELDS)).optional(), // metadata to merge
+      /**
+       * Addons trusted to supply merged metadata, most trusted first. Matched
+       * against an addon's name, preset type or instance id.
+       *
+       * This orders where a missing field is taken FROM — it does not exclude
+       * anyone: an addon further down (or absent entirely) still contributes
+       * fields nobody above it reported, since the point of merging is to
+       * enrich addons that report less.
+       */
+      trustedAddons: z.array(z.string().min(1)).optional(),
     })
     .optional(),
 });

@@ -8,6 +8,7 @@ import {
 import StreamUtils, { shouldPassthroughStage } from './utils.js';
 import { shouldProxyStream } from './proxifier.js';
 import { isExternalDebridFailover } from '../main/play-chain.js';
+import { orderByTrust, pickMergedDuration } from './merge-metadata.js';
 import { PLAYBACK_PATH_PREFIX } from '../debrid/utils.js';
 import { arrayMerge } from '../parser/merge.js';
 
@@ -67,7 +68,14 @@ class StreamDeduplicator {
     this.userData = userData;
   }
 
-  public async deduplicate(streams: ParsedStream[]): Promise<ParsedStream[]> {
+  /**
+   * @param titleRuntimeMs TMDB's runtime for the title, when known. Used only
+   * to REJECT a merged duration that is exactly it — see `mergeDuration`.
+   */
+  public async deduplicate(
+    streams: ParsedStream[],
+    titleRuntimeMs?: number
+  ): Promise<ParsedStream[]> {
     let deduplicator = this.userData.deduplicator;
     if (!deduplicator || !deduplicator.enabled) {
       return streams;
@@ -398,7 +406,8 @@ class StreamDeduplicator {
             failoverTypes,
             includeExternal,
             tiebreakerCmp,
-            libraryCmp
+            libraryCmp,
+            titleRuntimeMs
           );
         }
       }
@@ -493,10 +502,17 @@ class StreamDeduplicator {
     failoverTypes: ('usenet' | 'debrid')[],
     includeExternal: boolean,
     tiebreakerCmp: TiebreakerCmp,
-    libraryCmp: (a: ParsedStream, b: ParsedStream) => number
+    libraryCmp: (a: ParsedStream, b: ParsedStream) => number,
+    titleRuntimeMs?: number
   ): void {
     const others = group.filter((s) => s.id !== winner.id);
     if (others.length === 0) return;
+
+    // Where a missing field is taken FROM. Addons the user trusts come first,
+    // in their configured order; everyone else keeps their existing order
+    // behind them. Nobody is excluded — an untrusted addon still supplies a
+    // field none of the trusted ones reported, which is the point of merging.
+    const metadataSources = orderByTrust(others, merge.trustedAddons);
 
     // Same-release failover variants ---
     if (merge.failoverVariants) {
@@ -567,13 +583,17 @@ class StreamDeduplicator {
       this.mergeLanguagesAndSubtitles(winner, others, fields);
     }
     if (fields.includes('library') && !winner.library) {
-      if (others.some((s) => s.library)) winner.library = true;
+      if (metadataSources.some((s) => s.library)) winner.library = true;
     }
     if (fields.includes('idMatched') && !winner.idMatched) {
-      if (others.some((s) => s.idMatched)) winner.idMatched = true;
+      if (metadataSources.some((s) => s.idMatched)) winner.idMatched = true;
+    }
+    if (fields.includes('duration') && !winner.duration) {
+      const merged = pickMergedDuration(metadataSources, titleRuntimeMs);
+      if (merged) winner.duration = merged;
     }
     if (fields.includes('seadex') && !winner.seadex) {
-      const withSeadex = others.filter((s) => s.seadex);
+      const withSeadex = metadataSources.filter((s) => s.seadex);
       const best =
         withSeadex.find(
           (s) => s.seadex?.isBest && s.seadex.method === 'hash'
@@ -585,11 +605,14 @@ class StreamDeduplicator {
     }
     if (fields.includes('sizes')) {
       if (winner.size === undefined) {
-        const max = Math.max(0, ...others.map((s) => s.size ?? 0));
+        const max = Math.max(0, ...metadataSources.map((s) => s.size ?? 0));
         if (max > 0) winner.size = max;
       }
       if (winner.folderSize === undefined) {
-        const max = Math.max(0, ...others.map((s) => s.folderSize ?? 0));
+        const max = Math.max(
+          0,
+          ...metadataSources.map((s) => s.folderSize ?? 0)
+        );
         if (max > 0) winner.folderSize = max;
       }
     }

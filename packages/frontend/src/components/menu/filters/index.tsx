@@ -30,6 +30,7 @@ import { GoContainer, GoFileBinary } from 'react-icons/go';
 import { TbFilterCode } from 'react-icons/tb';
 import { Select } from '../../ui/select';
 import { Combobox } from '../../ui/combobox';
+import { SortableList } from '../../shared/sortable-list';
 import { SettingsCard } from '../../shared/settings-card';
 import {
   RESOLUTIONS,
@@ -4023,6 +4024,83 @@ function Content() {
                           value: field,
                         }))}
                       />
+                      <Combobox
+                        label="Trusted metadata sources"
+                        multiple
+                        help="Addons trusted to supply merged metadata, most trusted first (drag to reorder below). This only decides who a missing field is taken from — addons lower down, or not listed at all, still contribute anything nobody above them reported."
+                        disabled={
+                          !userData.deduplicator?.enabled ||
+                          !userData.deduplicator?.merge?.enabled
+                        }
+                        value={
+                          userData.deduplicator?.merge?.trustedAddons ?? []
+                        }
+                        emptyMessage="You haven't installed any addons..."
+                        placeholder="Select addons..."
+                        onValueChange={(value) => {
+                          setUserData((prev) => {
+                            // Keep the order already chosen; append only what's new.
+                            const next = value as string[];
+                            const previous =
+                              prev.deduplicator?.merge?.trustedAddons ?? [];
+                            const kept = previous.filter((v) =>
+                              next.includes(v)
+                            );
+                            const added = next.filter((v) => !kept.includes(v));
+                            return {
+                              ...prev,
+                              deduplicator: {
+                                ...prev.deduplicator,
+                                merge: {
+                                  ...prev.deduplicator?.merge,
+                                  trustedAddons: [...kept, ...added],
+                                },
+                              },
+                            };
+                          });
+                        }}
+                        options={userData.presets.map((preset) => ({
+                          label: preset.options.name || preset.type,
+                          value: preset.instanceId,
+                          textValue: preset.options.name,
+                        }))}
+                      />
+                      {(userData.deduplicator?.merge?.trustedAddons?.length ??
+                        0) > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-sm text-[--muted]">
+                            Priority order — drag to reorder.
+                          </p>
+                          <SortableList
+                            items={
+                              userData.deduplicator?.merge?.trustedAddons ?? []
+                            }
+                            labelFor={(id) =>
+                              userData.presets.find((p) => p.instanceId === id)
+                                ?.options.name ||
+                              userData.presets.find((p) => p.instanceId === id)
+                                ?.type ||
+                              id
+                            }
+                            disabled={
+                              !userData.deduplicator?.enabled ||
+                              !userData.deduplicator?.merge?.enabled
+                            }
+                            onChange={(trustedAddons) => {
+                              setUserData((prev) => ({
+                                ...prev,
+                                deduplicator: {
+                                  ...prev.deduplicator,
+                                  merge: {
+                                    ...prev.deduplicator?.merge,
+                                    trustedAddons,
+                                  },
+                                },
+                              }));
+                            }}
+                          />
+                        </div>
+                      )}
                     </SettingsCard>
                   </>
                 )}

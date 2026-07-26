@@ -322,7 +322,24 @@ export async function processStreams(
   }
 
   const dedupStart = Date.now();
-  processedStreams = await ctx.deduplicator.deduplicate(processedStreams);
+  // TMDB's runtime for the title, in ms. Passed only so a merged duration that
+  // exactly equals it can be rejected: an addon echoing the catalogue runtime
+  // tells us nothing about the specific release (spec §8).
+  let titleRuntimeMs: number | undefined;
+  try {
+    const runtimeMinutes =
+      (await context.getEpisodeRuntime()) ??
+      (await context.getMetadata())?.runtime;
+    if (runtimeMinutes && runtimeMinutes > 0) {
+      titleRuntimeMs = runtimeMinutes * 60_000;
+    }
+  } catch {
+    // Metadata is optional here — without it the guard simply doesn't apply.
+  }
+  processedStreams = await ctx.deduplicator.deduplicate(
+    processedStreams,
+    titleRuntimeMs
+  );
   deduplicationMs = Date.now() - dedupStart;
 
   if (isMeta || resolvedResults.hasNewStreams) {
