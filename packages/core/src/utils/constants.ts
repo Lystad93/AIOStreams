@@ -1682,10 +1682,10 @@ export const TRANSLATION_PROVIDERS = {
   groq: {
     name: 'Groq',
     api: 'openai' as const,
-    defaultModel: 'llama-3.3-70b-versatile',
+    defaultModel: 'openai/gpt-oss-120b',
     baseUrl: 'https://api.groq.com/openai/v1',
     signUpUrl: 'https://console.groq.com/keys',
-    freeTier: 'Free tier ~100K tokens/day (~2 movies) on 70B models',
+    freeTier: 'Small free token budget — best as a spare, not a workhorse',
     needsBaseUrl: false,
   },
   mistral: {
@@ -1700,10 +1700,10 @@ export const TRANSLATION_PROVIDERS = {
   cerebras: {
     name: 'Cerebras',
     api: 'openai' as const,
-    defaultModel: 'llama-3.3-70b',
+    defaultModel: 'gpt-oss-120b',
     baseUrl: 'https://api.cerebras.ai/v1',
     signUpUrl: 'https://cloud.cerebras.ai/',
-    freeTier: '~1M tokens/day (~20 movies) — the fastest option',
+    freeTier: '~1M tokens/day (~20 movies) — fastest option (~3000 tok/s)',
     needsBaseUrl: false,
   },
   deepseek: {
