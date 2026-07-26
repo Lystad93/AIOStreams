@@ -41,6 +41,7 @@ export interface PreviewInput {
   message: string;
   library: boolean;
   subtitleTranslated: boolean;
+  translatedSubtitles: string[];
   proxied: boolean;
   private: boolean;
   freeleech: boolean;
@@ -150,6 +151,7 @@ export const DEFAULT_PREVIEW_INPUT: PreviewInput = {
   message: 'This is a message',
   library: false,
   subtitleTranslated: false,
+  translatedSubtitles: [],
   proxied: false,
   private: false,
   freeleech: false,
@@ -191,6 +193,10 @@ const STREAM_FIELDS = [
   'stream.message',
   'stream.library',
   'stream.subtitleTranslated',
+  'stream.translatedSubtitles',
+  'stream.translatedSubtitleCodes',
+  'stream.translatedSubtitleEmojis',
+  'stream.smallTranslatedSubtitleCodes',
   'stream.private',
   'stream.freeleech',
   'stream.proxied',
@@ -507,6 +513,7 @@ export function buildParsedStream(input: PreviewInput): ParsedStream {
     },
     library: input.library,
     subtitleTranslated: input.subtitleTranslated,
+    translatedSubtitles: input.translatedSubtitles,
     parsedFile,
     filename: input.filename,
     folderName: input.folderName,

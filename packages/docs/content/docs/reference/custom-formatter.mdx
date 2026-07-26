@@ -36,7 +36,11 @@ Modifiers are chained with `::`:
 | `{stream.type}`      | string  | Type: `debrid`, `usenet`, `http`, `live`, `youtube`, `p2p`                                          |
 | `{stream.proxied}`   | boolean | Whether the stream is proxied (e.g. MediaFlow)                                                      |
 | `{stream.library}`   | boolean | Whether the file is already in your "library" e.g. debrid account                                   |
-| `{stream.subtitleTranslated}` | boolean | Whether a finished AI-translated subtitle already exists for this exact release in your target language |
+| `{stream.subtitleTranslated}` | boolean | Whether a finished AI-translated subtitle already exists for this release (or another release of the same runtime) |
+| `{stream.translatedSubtitles}` | string[] | Languages an AI translation is available in, e.g. `Norwegian` |
+| `{stream.translatedSubtitleCodes}` | string[] | The same, as ISO codes, e.g. `NO` |
+| `{stream.translatedSubtitleEmojis}` | string[] | The same, as flag emojis, e.g. 🇳🇴 |
+| `{stream.smallTranslatedSubtitleCodes}` | string[] | The same, as small-caps ISO codes |
 | `{stream.idMatched}` | boolean | Whether the source identified the release by external ID rather than by searching its title as text |
 | `{stream.indexer}`   | string  | Source indexer                                                                                      |
 | `{stream.message}`   | string  | Additional status message                                                                           |

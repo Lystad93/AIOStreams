@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { scoreRelease, matchesEpisode, durationsMatch } from './match.js';
 import { readZipEntries, subtitleEntries } from './providers/zip.js';
+import { buildSubtitleFilename, subtitleLanguageCode } from './naming.js';
 import { deflateRawSync, crc32 } from 'node:zlib';
 
 test('scoreRelease: a moviehash match is the only automatic 100', () => {
@@ -193,4 +194,55 @@ test('zip reader: rejects non-ZIP input clearly', () => {
     () => readZipEntries(Buffer.from('this is not a zip file at all')),
     /not a zip/i
   );
+});
+
+test('buildSubtitleFilename: follows the player/OpenSubtitles convention', () => {
+  const release =
+    'Backrooms.2026.2160p.iT.WEB-DL.DDP5.1.Atmos.DV.H.265-BYNDR.mkv';
+  // Dropped next to the video, a player picks this up automatically.
+  assert.equal(
+    buildSubtitleFilename({ releaseName: release, language: 'Norwegian' }),
+    'Backrooms.2026.2160p.iT.WEB-DL.DDP5.1.Atmos.DV.H.265-BYNDR.no.srt'
+  );
+  // Flags come after the language, in the order players expect.
+  assert.equal(
+    buildSubtitleFilename({
+      releaseName: release,
+      language: 'English',
+      hearingImpaired: true,
+    }),
+    'Backrooms.2026.2160p.iT.WEB-DL.DDP5.1.Atmos.DV.H.265-BYNDR.en.sdh.srt'
+  );
+  assert.equal(
+    buildSubtitleFilename({
+      releaseName: 'Show.S01E01-GRP',
+      language: 'English',
+      forced: true,
+    }),
+    'Show.S01E01-GRP.en.forced.srt'
+  );
+});
+
+test('buildSubtitleFilename: stays a safe filename and survives missing data', () => {
+  // Path separators and quotes would break the Content-Disposition header.
+  const unsafe = buildSubtitleFilename({
+    releaseName: 'a/b"c:d*e?f.mkv',
+    language: 'English',
+  });
+  assert.ok(!/[/"\\:*?]/.test(unsafe), unsafe);
+  // Unknown language → no bogus code segment.
+  assert.equal(
+    buildSubtitleFilename({ releaseName: 'X.mkv', language: 'Klingon' }),
+    'X.srt'
+  );
+  assert.equal(buildSubtitleFilename({}), 'subtitle.srt');
+});
+
+test('subtitleLanguageCode: names and codes both resolve', () => {
+  assert.equal(subtitleLanguageCode('Norwegian'), 'no');
+  assert.equal(subtitleLanguageCode('English'), 'en');
+  // Already a code — passed through rather than discarded.
+  assert.equal(subtitleLanguageCode('spa'), 'spa');
+  assert.equal(subtitleLanguageCode(undefined), undefined);
+  assert.equal(subtitleLanguageCode('Not A Language'), undefined);
 });

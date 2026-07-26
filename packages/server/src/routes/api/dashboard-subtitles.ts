@@ -1,5 +1,9 @@
 import { Router, Request, Response } from 'express';
-import { SubtitleJobRepository, createLogger } from '@aiostreams/core';
+import {
+  SubtitleJobRepository,
+  buildSubtitleFilename,
+  createLogger,
+} from '@aiostreams/core';
 import { createResponse } from '../../utils/responses.js';
 
 /**
@@ -28,16 +32,27 @@ router.get('/', async (req: Request, res: Response) => {
     );
 });
 
-/** Derive a friendly download filename from the source release name. */
+/**
+ * Name the download the way players expect (`<release>.<lang>.srt`), so it can
+ * be dropped next to the video file and picked up automatically.
+ */
 function downloadName(
-  filename: string | undefined,
+  job: { filename?: string; sourceLang?: string; targetLang?: string },
   which: 'extracted' | 'translated'
 ): string {
-  const base = (filename ?? 'subtitle')
-    .replace(/\.[a-z0-9]{2,4}$/i, '')
-    .replace(/[\r\n"\\/]/g, '_')
-    .slice(0, 150);
-  return `${base}.${which}.srt`;
+  const language = which === 'extracted' ? job.sourceLang : job.targetLang;
+  return buildSubtitleFilename({
+    releaseName: job.filename,
+    language,
+    // Distinguish the two files when both ended up in the same language.
+    suffix:
+      which === 'extracted' &&
+      job.sourceLang &&
+      job.targetLang &&
+      job.sourceLang === job.targetLang
+        ? 'source'
+        : undefined,
+  });
 }
 
 function serveSrt(which: 'extracted' | 'translated') {
@@ -55,7 +70,7 @@ function serveSrt(which: 'extracted' | 'translated') {
         .set('content-type', 'application/x-subrip; charset=utf-8')
         .set(
           'content-disposition',
-          `attachment; filename="${downloadName(data.filename, which)}"`
+          `attachment; filename="${downloadName(data, which)}"`
         )
         .set('cache-control', 'no-store')
         .send(data.srt);

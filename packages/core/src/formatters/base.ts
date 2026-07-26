@@ -72,6 +72,10 @@ export interface ParseValue {
     uLanguageCodes: string[] | null;
     subtitleCodes: string[] | null;
     uSubtitleCodes: string[] | null;
+    translatedSubtitles: string[] | null;
+    translatedSubtitleCodes: string[] | null;
+    translatedSubtitleEmojis: string[] | null;
+    smallTranslatedSubtitleCodes: string[] | null;
     smallLanguageCodes: string[] | null;
     uSmallLanguageCodes: string[] | null;
     smallSubtitleCodes: string[] | null;
@@ -470,6 +474,16 @@ export abstract class BaseFormatter {
           : userSpecifiedLanguages
       )
     );
+    // Languages we hold a finished translation in — same code/emoji treatment
+    // as the other language fields so templates read consistently.
+    const translatedSubtitleVariants = memo(() =>
+      buildLanguageVariants(
+        stream.translatedSubtitles,
+        userSpecifiedSubtitles?.length
+          ? userSpecifiedSubtitles
+          : userSpecifiedLanguages
+      )
+    );
     const sortedAudioChannels = sortByUserPreference(
       stream.parsedFile?.audioChannels,
       getFieldValues('audioChannels')
@@ -511,6 +525,18 @@ export abstract class BaseFormatter {
         },
         get uSubtitles() {
           return subtitleVariants().userValues;
+        },
+        get translatedSubtitles() {
+          return translatedSubtitleVariants().sortedValues;
+        },
+        get translatedSubtitleCodes() {
+          return translatedSubtitleVariants().codes;
+        },
+        get translatedSubtitleEmojis() {
+          return translatedSubtitleVariants().emojis;
+        },
+        get smallTranslatedSubtitleCodes() {
+          return translatedSubtitleVariants().smallCodes;
         },
         get languageEmojis() {
           return languageVariants().emojis;
@@ -676,7 +702,8 @@ export abstract class BaseFormatter {
         daysSinceFirstAired: this.formatterContext.daysSinceFirstAired ?? null,
         daysSinceLastAired: this.formatterContext.daysSinceLastAired ?? null,
         hasNextEpisode: this.formatterContext.hasNextEpisode ?? false,
-        daysUntilNextEpisode: this.formatterContext.daysUntilNextEpisode ?? null,
+        daysUntilNextEpisode:
+          this.formatterContext.daysUntilNextEpisode ?? null,
         anilistId: this.formatterContext.anilistId ?? null,
         malId: this.formatterContext.malId ?? null,
         hasSeaDex: this.formatterContext.hasSeaDex ?? false,

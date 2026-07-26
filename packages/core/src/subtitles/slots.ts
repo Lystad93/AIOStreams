@@ -462,6 +462,7 @@ export async function markTranslatedStreams(
     /** Runtime in ms, as carried on ParsedStream. */
     duration?: number;
     subtitleTranslated?: boolean;
+    translatedSubtitles?: string[];
   }[]
 ): Promise<void> {
   const cfg = resolveSubtitleConfig(userData);
@@ -486,10 +487,15 @@ export async function markTranslatedStreams(
     cfg.targetLanguage,
     [...byFilename.keys()]
   );
+  const flag = (s: (typeof streams)[number]) => {
+    s.subtitleTranslated = true;
+    s.translatedSubtitles = [
+      ...new Set([...(s.translatedSubtitles ?? []), cfg.targetLanguage]),
+    ];
+  };
+
   for (const filename of translated.keys()) {
-    for (const s of byFilename.get(filename) ?? []) {
-      s.subtitleTranslated = true;
-    }
+    for (const s of byFilename.get(filename) ?? []) flag(s);
   }
 
   // Also flag releases whose runtime matches a translation already in the
@@ -512,7 +518,7 @@ export async function markTranslatedStreams(
       ));
       checked.set(durationMs, hit);
     }
-    if (hit) s.subtitleTranslated = true;
+    if (hit) flag(s);
   }
 }
 

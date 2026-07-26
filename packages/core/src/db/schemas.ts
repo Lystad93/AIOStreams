@@ -1172,6 +1172,12 @@ export const ParsedStreamSchema = z.object({
    * translated subtitle is ready immediately, with no extraction wait.
    */
   subtitleTranslated: z.boolean().optional(),
+  /**
+   * Languages we hold a finished translation in for this release. Exposed to
+   * the formatter with the same code/emoji variants as the other language
+   * fields, so a template can show e.g. 🇳🇴 when a Norwegian translation exists.
+   */
+  translatedSubtitles: z.array(z.string()).optional(),
   /** Upstream matched this release against an ID-indexed source, not a text search. */
   idMatched: z.boolean().optional(),
   seadex: z

@@ -179,18 +179,31 @@ export const SubtitleJobRepository = {
   async getSrt(
     id: string,
     which: 'extracted' | 'translated'
-  ): Promise<{ srt: string; filename?: string } | null> {
+  ): Promise<{
+    srt: string;
+    filename?: string;
+    sourceLang?: string;
+    targetLang?: string;
+  } | null> {
     const col =
       which === 'extracted' ? sql`extracted_srt` : sql`translated_srt`;
     const row = await getDb().maybeOne<{
       [column: string]: unknown;
       srt: string | null;
       filename: string | null;
+      source_lang: string | null;
+      target_lang: string | null;
     }>(sql`
-      SELECT ${col} AS srt, filename FROM subtitle_jobs WHERE id = ${id}
+      SELECT ${col} AS srt, filename, source_lang, target_lang
+      FROM subtitle_jobs WHERE id = ${id}
     `);
     if (!row || row.srt == null) return null;
-    return { srt: row.srt, filename: row.filename ?? undefined };
+    return {
+      srt: row.srt,
+      filename: row.filename ?? undefined,
+      sourceLang: row.source_lang ?? undefined,
+      targetLang: row.target_lang ?? undefined,
+    };
   },
 
   /**

@@ -16,6 +16,7 @@ export {
   type ExternalProviderId,
 } from './providers/index.js';
 export { normaliseReleaseName } from './release-name.js';
+export { buildSubtitleFilename, subtitleLanguageCode } from './naming.js';
 export {
   recordServedReleases,
   lookupServedRelease,

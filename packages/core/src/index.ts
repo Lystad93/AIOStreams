@@ -34,6 +34,8 @@ export {
   buildExternalSlots,
   normaliseReleaseName,
   scoreRelease,
+  buildSubtitleFilename,
+  subtitleLanguageCode,
   serializeSrt,
   parseSrt,
   getJob,
