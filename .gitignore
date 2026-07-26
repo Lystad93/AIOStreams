@@ -9,3 +9,5 @@ next-env.d.ts
 metadata.json
 data/
 testing/
+# macOS Finder metadata
+.DS_Store
