@@ -59,6 +59,21 @@ export interface ProviderCredentials {
   opensubtitlesPassword?: string;
 }
 
+/**
+ * What a user is willing to be offered, independent of how well it matches.
+ *
+ * Kept apart from credentials because these are preferences rather than access:
+ * a provider switched off here is skipped even though a key exists for it.
+ */
+export interface ExternalFilters {
+  /** Providers to search. Omitted or empty means all of them. */
+  providers?: ExternalProviderId[];
+  /** Keep SDH/hearing-impaired tracks (speaker labels, [sound descriptions]). */
+  hearingImpaired?: boolean;
+  /** Keep forced tracks — foreign dialogue only, not a full transcript. */
+  forced?: boolean;
+}
+
 export interface SubtitleProviderClient {
   readonly id: ExternalProviderId;
   /** False when no API key is available; the provider is then skipped. */

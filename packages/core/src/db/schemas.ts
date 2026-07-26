@@ -835,6 +835,32 @@ export const UserDataSchema = z.object({
        */
       opensubtitlesUsername: z.string().optional(),
       opensubtitlesPassword: z.string().optional(),
+      /**
+       * Per-provider switches. Unset means on, so adding a provider later does
+       * not silently stay off for existing users. A provider turned off here is
+       * skipped even when an instance-wide key would otherwise enable it —
+       * clearing your own key is not a way to opt out, because the instance key
+       * legitimately falls back in.
+       */
+      providers: z
+        .object({
+          subsource: z.boolean().optional(),
+          subdl: z.boolean().optional(),
+          opensubtitles: z.boolean().optional(),
+        })
+        .optional(),
+      /**
+       * "SDH" (subtitles for the deaf and hard-of-hearing) and "HI" (hearing
+       * impaired) name the same thing — a track carrying speaker labels and
+       * sound descriptions like [door creaks]. Providers use both words for the
+       * one flag, so one switch covers it.
+       */
+      includeHearingImpaired: z.boolean().optional(),
+      /**
+       * Forced subtitles only cover foreign-language dialogue in an otherwise
+       * understood soundtrack, so they look broken when picked as a full track.
+       */
+      includeForced: z.boolean().optional(),
     })
     .optional(),
   autoPlay: z

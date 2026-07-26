@@ -83,6 +83,11 @@ export interface RunJobInput {
   };
   /** Ordered preferred source languages for track selection (§4.4). */
   sourceLanguages: string[];
+  /**
+   * Track kinds the user accepts. Unset means both, matching the provider-side
+   * default — these are ordinary subtitles, only skipped when asked.
+   */
+  allowTracks?: { forced?: boolean; hearingImpaired?: boolean };
   targetLanguage: string;
   apiKey: string;
   providerId: string;
@@ -233,7 +238,8 @@ async function runExactJob(input: RunJobInput): Promise<void> {
       }
       const extracted = await extractBestSubtitle(
         playbackUrl,
-        input.sourceLanguages
+        input.sourceLanguages,
+        input.allowTracks ?? {}
       );
       srt = extracted.srt;
       sourceLang = extracted.track.language;

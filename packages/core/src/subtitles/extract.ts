@@ -216,9 +216,18 @@ export async function probeMedia(
  */
 export function pickTrack(
   tracks: ProbedSubtitleTrack[],
-  preferredLangs: string[]
+  preferredLangs: string[],
+  allow: { forced?: boolean; hearingImpaired?: boolean } = {}
 ): ProbedSubtitleTrack | undefined {
-  const text = tracks.filter((t) => t.isText);
+  // Demotion isn't enough when a kind is unwanted: on a release whose only
+  // track is forced, sorting still returns it. Excluding means "no subtitle"
+  // rather than the wrong one.
+  const text = tracks.filter(
+    (t) =>
+      t.isText &&
+      !(allow.forced === false && t.forced) &&
+      !(allow.hearingImpaired === false && t.hearingImpaired)
+  );
   if (text.length === 0) return undefined;
 
   // Compare via canonical display names so a UI selection ("Norwegian") matches
@@ -287,7 +296,8 @@ export async function extractTrackToSrt(
  */
 export async function extractBestSubtitle(
   url: string,
-  preferredLangs: string[]
+  preferredLangs: string[],
+  allow: { forced?: boolean; hearingImpaired?: boolean } = {}
 ): Promise<{
   srt: string;
   track: ProbedSubtitleTrack;
@@ -306,7 +316,7 @@ export async function extractBestSubtitle(
       })`
     );
   }
-  const picked = pickTrack(tracks, preferredLangs);
+  const picked = pickTrack(tracks, preferredLangs, allow);
   if (!picked) {
     const bitmap = tracks.filter((t) => BITMAP_CODECS.has(t.codec));
     if (bitmap.length > 0) {

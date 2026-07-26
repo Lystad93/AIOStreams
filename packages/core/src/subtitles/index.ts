@@ -31,6 +31,7 @@ export {
   markTranslatedStreams,
   buildExternalSlots,
   resolveExternalConfig,
+  resolveTrackPreferences,
   externalJobHash,
 } from './slots.js';
 export {

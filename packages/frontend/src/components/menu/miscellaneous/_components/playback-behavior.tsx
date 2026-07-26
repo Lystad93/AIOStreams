@@ -256,6 +256,66 @@ export function PlaybackBehavior() {
             />
           </div>
         )}
+        {(
+          [
+            ['subsource', 'SubSource'],
+            ['subdl', 'SubDL'],
+            ['opensubtitles', 'OpenSubtitles'],
+          ] as const
+        ).map(([id, name]) => (
+          <Switch
+            key={id}
+            label={`Search ${name}`}
+            side="right"
+            disabled={!userData.externalSubtitles?.enabled}
+            help={`Turn off to stop offering ${name} results. This overrides any key — including one set by this instance's owner.`}
+            value={userData.externalSubtitles?.providers?.[id] ?? true}
+            onValueChange={(value) => {
+              setUserData((prev) => ({
+                ...prev,
+                externalSubtitles: {
+                  ...prev.externalSubtitles,
+                  providers: {
+                    ...prev.externalSubtitles?.providers,
+                    [id]: value,
+                  },
+                },
+              }));
+            }}
+          />
+        ))}
+        <Switch
+          label="Include hearing impaired (SDH)"
+          side="right"
+          disabled={!userData.externalSubtitles?.enabled}
+          help="Tracks that add speaker labels and sound descriptions like [door creaks]. SDH and HI are two names for the same thing. Also applies to which embedded track is extracted for translation."
+          value={userData.externalSubtitles?.includeHearingImpaired ?? true}
+          onValueChange={(value) => {
+            setUserData((prev) => ({
+              ...prev,
+              externalSubtitles: {
+                ...prev.externalSubtitles,
+                includeHearingImpaired: value,
+              },
+            }));
+          }}
+        />
+        <Switch
+          label="Include forced"
+          side="right"
+          disabled={!userData.externalSubtitles?.enabled}
+          help="Forced tracks only cover foreign-language dialogue, so they look broken if picked as a full subtitle track. Also applies to which embedded track is extracted for translation."
+          value={userData.externalSubtitles?.includeForced ?? true}
+          onValueChange={(value) => {
+            setUserData((prev) => ({
+              ...prev,
+              externalSubtitles: {
+                ...prev.externalSubtitles,
+                includeForced: value,
+              },
+            }));
+          }}
+        />
         <PasswordInput
           label="SubSource API key (optional)"
           autoComplete="off"

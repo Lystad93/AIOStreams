@@ -37,7 +37,11 @@ import {
   findExternalSubtitles,
   type ScoredSubtitle,
 } from './providers/index.js';
-import type { ProviderCredentials } from './providers/types.js';
+import type {
+  ExternalFilters,
+  ExternalProviderId,
+  ProviderCredentials,
+} from './providers/types.js';
 import { PLAYBACK_PATH_PREFIX } from '../debrid/utils.js';
 import type { SubtitleJob, SubtitleJobKey } from './types.js';
 
@@ -86,6 +90,23 @@ export function resolveSubtitleConfig(userData: UserData): {
     apiKey: cfg.apiKey,
     provider: cfg.provider ?? 'gemini',
     model: cfg.model,
+  };
+}
+
+/**
+ * Which subtitle kinds this user accepts, for both externally-sourced results
+ * and the embedded track extraction picks. Deliberately one setting: "I don't
+ * want forced subtitles" is a statement about subtitles, not about where they
+ * came from. Unset means accept both.
+ */
+export function resolveTrackPreferences(userData: UserData): {
+  forced?: boolean;
+  hearingImpaired?: boolean;
+} {
+  const ext = userData.externalSubtitles;
+  return {
+    forced: ext?.includeForced !== false,
+    hearingImpaired: ext?.includeHearingImpaired !== false,
   };
 }
 
@@ -180,21 +201,36 @@ export async function buildSubtitleSlots(
   // 1. Durable reuse first: if a finished translation is already stored in the
   // DB (permanent, survives cache TTL and restarts), serve it — never re-extract
   // or re-translate a file we've already done. Matches across addons too.
-  const durableDone = !!(await storedTranslationId(
+  const durable = await storedTranslation(
     uuid,
     id,
     cfg.targetLanguage,
     served.filename,
     key,
     served.durationMs
-  ));
-  if (durableDone) {
+  );
+  if (durable) {
+    // Flagged only for a runtime match, where the subtitle was made for a
+    // different release and the equal runtime is the whole reason it's offered.
+    // A name match needs no such caveat.
     slots.push({
       id: SLOT_ID.finished,
       url: slotUrl('result', token),
-      lang: cfg.targetLanguage,
+      lang:
+        durable.matchedBy === 'duration'
+          ? `${cfg.targetLanguage} · duration ✓`
+          : cfg.targetLanguage,
     });
     return slots;
+  }
+  if (!served.durationMs) {
+    // The single most common reason a duration match never fires. The index is
+    // built from `stream.duration`, so a stream list where no addon reports a
+    // runtime leaves nothing to match on.
+    logger.debug(
+      { filename: served.filename, contentId: id },
+      'no runtime known for the playing release — duration matching is inactive; enable the "duration" merged metadata field or use an addon that reports it'
+    );
   }
 
   // 2. Otherwise consult the live job cache for in-flight / failed state.
@@ -242,6 +278,7 @@ export async function buildSubtitleSlots(
 export function resolveExternalConfig(userData: UserData): {
   languages: string[];
   creds: ProviderCredentials;
+  filters: ExternalFilters;
 } | null {
   if (!appConfig.subtitles.externalEnabled) return null;
   const ext = userData.externalSubtitles;
@@ -262,6 +299,16 @@ export function resolveExternalConfig(userData: UserData): {
         ];
   if (languages.length === 0) return null;
 
+  // Unset means on, so a provider added in a later version doesn't stay
+  // silently off for people who configured this before it existed.
+  const p = ext?.providers;
+  const providers = (
+    ['subsource', 'subdl', 'opensubtitles'] as ExternalProviderId[]
+  ).filter((id) => p?.[id] !== false);
+  // Every provider off is a deliberate "none", not a reason to fall back to all
+  // of them — which is what an empty list would mean downstream.
+  if (providers.length === 0) return null;
+
   return {
     languages,
     creds: {
@@ -270,6 +317,11 @@ export function resolveExternalConfig(userData: UserData): {
       opensubtitlesApiKey: ext?.opensubtitlesApiKey,
       opensubtitlesUsername: ext?.opensubtitlesUsername,
       opensubtitlesPassword: ext?.opensubtitlesPassword,
+    },
+    filters: {
+      providers,
+      hearingImpaired: ext?.includeHearingImpaired !== false,
+      forced: ext?.includeForced !== false,
     },
   };
 }
@@ -310,7 +362,7 @@ export async function buildExternalSlots(
   if (!uuid || !filename) return [];
   const ext = resolveExternalConfig(userData);
   if (!ext) return [];
-  const { languages, creds } = ext;
+  const { languages, creds, filters } = ext;
   const { imdbId, season, episode } = parseImdbContentId(contentId);
   if (!imdbId) return [];
 
@@ -320,13 +372,20 @@ export async function buildExternalSlots(
   const ourKey = normaliseReleaseName(filename);
   const ourDurationMs = ourKey ? durationIndex[ourKey] : undefined;
 
-  const cacheKey = `${imdbId}|${season ?? ''}|${episode ?? ''}|${ourKey}|${languages.join(',')}|${ourDurationMs ?? ''}`;
+  // The filters are part of the key: without them a cached hit would keep
+  // serving a provider for the rest of the TTL after it was switched off, which
+  // looks exactly like the setting having no effect.
+  const filterKey = `${filters.providers?.join('+') ?? 'all'}|${
+    filters.hearingImpaired === false ? 'nohi' : ''
+  }${filters.forced === false ? 'nofor' : ''}`;
+  const cacheKey = `${imdbId}|${season ?? ''}|${episode ?? ''}|${ourKey}|${languages.join(',')}|${ourDurationMs ?? ''}|${filterKey}`;
   let matches = await externalCache().get(cacheKey);
   if (matches === undefined) {
     matches = await findExternalSubtitles(
       { imdbId, season, episode, languages, filename },
       {
         creds,
+        filters,
         limit: Math.max(
           appConfig.subtitles.externalUseLimit,
           appConfig.subtitles.externalTranslateLimit
@@ -600,6 +659,7 @@ export async function precacheTranslateExact(
     job,
     playbackUrl: stream.url,
     sourceLanguages: cfg.sourceLanguages,
+    allowTracks: resolveTrackPreferences(userData),
     targetLanguage: cfg.targetLanguage,
     apiKey: cfg.apiKey,
     providerId: cfg.provider,
@@ -624,6 +684,16 @@ export async function precacheTranslateExact(
  * inconsistently, so the size-derived job id alone would miss it), then falls
  * back to this request's own job id.
  */
+/**
+ * How a stored translation was found. Worth surfacing: a subtitle matched on
+ * runtime alone was made for a DIFFERENT release, which is exactly the case a
+ * user wants to see flagged before trusting the timing.
+ */
+export type StoredMatch = {
+  id: string;
+  matchedBy: 'filename' | 'own' | 'duration';
+};
+
 async function storedTranslationId(
   uuid: string,
   contentId: string,
@@ -632,6 +702,26 @@ async function storedTranslationId(
   key: SubtitleJobKey,
   durationMs?: number
 ): Promise<string | undefined> {
+  return (
+    await storedTranslation(
+      uuid,
+      contentId,
+      targetLang,
+      filename,
+      key,
+      durationMs
+    )
+  )?.id;
+}
+
+async function storedTranslation(
+  uuid: string,
+  contentId: string,
+  targetLang: string,
+  filename: string | undefined,
+  key: SubtitleJobKey,
+  durationMs?: number
+): Promise<StoredMatch | undefined> {
   if (filename) {
     const found = await SubtitleJobRepository.findTranslatedByFilenames(
       uuid,
@@ -640,22 +730,24 @@ async function storedTranslationId(
       [filename]
     );
     const id = found.get(filename);
-    if (id) return id;
+    if (id) return { id, matchedBy: 'filename' };
   }
   const own = jobId(key);
-  if (await SubtitleJobRepository.hasTranslated(own)) return own;
+  if (await SubtitleJobRepository.hasTranslated(own))
+    return { id: own, matchedBy: 'own' };
 
   // Last resort, and the one that makes a library subtitle reusable: a
   // translation made for a DIFFERENT release of this title whose runtime
   // matches. Releases that differ only cosmetically share subtitle timing.
   if (durationMs) {
-    return SubtitleJobRepository.findTranslatedByDuration(
+    const id = await SubtitleJobRepository.findTranslatedByDuration(
       uuid,
       contentId,
       targetLang,
       durationMs,
       durationToleranceMs(durationMs)
     );
+    if (id) return { id, matchedBy: 'duration' };
   }
   return undefined;
 }

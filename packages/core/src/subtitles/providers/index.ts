@@ -21,6 +21,7 @@ import type {
   ExternalSearchQuery,
   ExternalSubtitleCandidate,
   ExternalProviderId,
+  ExternalFilters,
   ProviderCredentials,
   SubtitleProviderClient,
 } from './types.js';
@@ -59,12 +60,22 @@ export function getProviderClient(
   return CLIENTS.find((c) => c.id === id);
 }
 
-/** Providers that are switched on and have a key (per-user or instance). */
+/**
+ * Providers that are switched on and have a key (per-user or instance).
+ *
+ * The user's switch is checked before the key, because the two are independent:
+ * an instance-wide key legitimately falls back in when someone has none of
+ * their own, so clearing a key is not a way to opt out of a provider.
+ */
 export function configuredProviders(
-  creds: ProviderCredentials = {}
+  creds: ProviderCredentials = {},
+  enabled?: ExternalProviderId[]
 ): SubtitleProviderClient[] {
   if (!appConfig.subtitles.externalEnabled) return [];
-  return CLIENTS.filter((c) => c.isConfigured(creds));
+  const allowed = enabled && enabled.length > 0 ? new Set(enabled) : undefined;
+  return CLIENTS.filter(
+    (c) => (!allowed || allowed.has(c.id)) && c.isConfigured(creds)
+  );
 }
 
 /**
@@ -79,10 +90,12 @@ export async function findExternalSubtitles(
     limit?: number;
     duration?: DurationContext;
     creds?: ProviderCredentials;
+    filters?: ExternalFilters;
   } = {}
 ): Promise<ScoredSubtitle[]> {
   const creds = opts.creds ?? {};
-  const clients = configuredProviders(creds);
+  const filters = opts.filters ?? {};
+  const clients = configuredProviders(creds, filters.providers);
   if (clients.length === 0) return [];
 
   // No floor by default. Every result is already constrained to the right
@@ -126,6 +139,12 @@ export async function findExternalSubtitles(
       ).toLowerCase();
       if (!wantedLangs.has(lang)) continue;
     }
+    // Track-kind preferences. Both default to on: these are ordinary subtitles
+    // that many people want, so they're only dropped when asked for.
+    if (filters.hearingImpaired === false && candidate.hearingImpaired)
+      continue;
+    if (filters.forced === false && candidate.foreignPartsOnly) continue;
+
     // A season pack that doesn't cover our episode can't be used.
     if (
       !candidate.fullSeason &&

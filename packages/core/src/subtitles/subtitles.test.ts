@@ -84,6 +84,40 @@ test('pickTrack: matches UI language names against ffprobe ISO codes; skips bitm
   assert.ok(noPref?.isText); // still returns a text track
 });
 
+test('pickTrack: excluding a kind means no subtitle, not the wrong one', () => {
+  // The case demotion alone gets wrong: the only text track is forced, so
+  // sorting would still hand it back.
+  const onlyForced: ProbedSubtitleTrack[] = [
+    { index: 0, codec: 'subrip', isText: true, language: 'nor', forced: true },
+  ];
+  assert.ok(pickTrack(onlyForced, ['Norwegian']));
+  assert.equal(
+    pickTrack(onlyForced, ['Norwegian'], { forced: false }),
+    undefined
+  );
+
+  const onlySdh: ProbedSubtitleTrack[] = [
+    {
+      index: 0,
+      codec: 'subrip',
+      isText: true,
+      language: 'nor',
+      hearingImpaired: true,
+    },
+  ];
+  assert.equal(
+    pickTrack(onlySdh, ['Norwegian'], { hearingImpaired: false }),
+    undefined
+  );
+
+  // With an acceptable alternative present, exclusion just moves past it.
+  const mixed: ProbedSubtitleTrack[] = [
+    ...onlyForced,
+    { index: 1, codec: 'subrip', isText: true, language: 'nor' },
+  ];
+  assert.equal(pickTrack(mixed, ['Norwegian'], { forced: false })?.index, 1);
+});
+
 test('pickTrack: returns undefined when only bitmap tracks exist', () => {
   const tracks: ProbedSubtitleTrack[] = [
     { index: 0, codec: 'dvd_subtitle', isText: false, language: 'eng' },

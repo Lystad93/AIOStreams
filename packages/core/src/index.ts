@@ -30,6 +30,7 @@ export {
   findExternalSubtitles,
   downloadExternalSubtitle,
   resolveExternalConfig,
+  resolveTrackPreferences,
   externalJobHash,
   buildExternalSlots,
   normaliseReleaseName,
