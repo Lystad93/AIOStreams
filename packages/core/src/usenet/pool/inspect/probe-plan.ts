@@ -34,6 +34,22 @@ export const DYNAMIC_REGROUP_PROBES = 32;
  */
 const UNIFORM_SIZE_TOLERANCE = 0.01;
 
+/** Bound on the raced PAR2 index fetch; stays well under the inspect idle-abort. */
+const PAR2_INDEX_DEADLINE_MS = 10_000;
+
+/** Resolves `undefined` (never rejects) if `p` has not settled within `ms`. */
+function withDeadline<T>(
+  p: Promise<T | undefined>,
+  ms: number
+): Promise<T | undefined> {
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => resolve(undefined), ms);
+    timer.unref?.();
+  });
+  return Promise.race([p, deadline]).finally(() => clearTimeout(timer));
+}
+
 /** Median encoded size of the given files (0 when none have a positive size). */
 function medianEncodedSize(files: Array<{ encodedSize: number }>): number {
   const sizes = files.map((f) => f.encodedSize).filter((s) => s > 0);
@@ -75,6 +91,12 @@ export interface ProbePlan {
   inferredNames: Map<number, string>;
   /** PAR2 descriptor index, when prefetched for lazy-RAR sizing. */
   par2Index?: Par2Index;
+  /**
+   * The prefetched index, resolved on demand: an obfuscated file is placed by
+   * the md5 of the head its own probe fetches, so the probes consume this, not
+   * the plan. Undefined when nothing was fetched or the fetch failed.
+   */
+  par2(): Promise<Par2Index | undefined>;
   /** Whether PAR2 filename recovery is worth running after the probes. */
   wantPar2: boolean;
   /** Mid-pass re-grouping over recovered names: see the implementation. */
@@ -134,74 +156,96 @@ export async function buildProbePlan(
   // fill posts) keeps full probes.
   const lazySizes = new Map<number, number>();
   let par2Index: Par2Index | undefined;
-  if (opts.lazyArchives && !confirmedMiss && !opts.signal?.aborted) {
-    const rarSets = groupVolumeSets(
-      nzb.files.map((f, index) => ({
-        index,
-        filename: f.filename,
-        segments: f.segments.length,
-        firstSegmentNumber: f.segments[0]?.number,
-      }))
-    ).filter(
-      (s) =>
-        s.kind === 'rar' &&
-        s.members.length >= MIN_LAZY_VOLS &&
-        s.members.every((m) => nzb.files[m.index]?.segments[0]?.number === 1)
-    );
-    if (rarSets.length > 0) {
-      par2Index = await prefetchPar2Index(nzb, pool, opts.signal);
-      if (par2Index) {
-        // Fill/repost NZBs carry duplicate copies of set members that dedup
-        // removed from `members`; left alone they'd each still pay a probe.
-        // The survivors carry all the evidence; skip the copies wholesale.
-        const lazyBases = new Set<string>();
-        const survivors = new Set<number>();
-        for (const set of rarSets) {
-          const sizes = set.members.map(
-            (m) => par2Index!.byName.get(par2NameKey(m.filename))?.length
-          );
-          // Every member needs an exact size, or offsets would be corrupt.
-          if (sizes.some((s) => !s || s <= 0)) continue;
-          set.members.forEach((m, i) => lazySizes.set(m.index, sizes[i]!));
-          for (const m of set.members.slice(1, -1)) skipProbe.add(m.index);
-          lazyBases.add(`${set.baseName} rar`);
-          for (const m of set.members) survivors.add(m.index);
-          logger.debug(
-            {
-              nzbHash: nzb.hash,
-              base: set.baseName,
-              volumes: set.members.length,
-              skipped: set.members.length - 2,
-            },
-            'lazy: par2 sizes cover the set; skipping middle-volume probes'
-          );
-        }
-        if (lazyBases.size > 0) {
-          let dupSkipped = 0;
-          nzb.files.forEach((f, index) => {
-            if (skipProbe.has(index) || survivors.has(index)) return;
-            const b = f.filename ? archiveBaseName(f.filename) : undefined;
-            if (b && lazyBases.has(`${b.base} ${b.kind}`)) {
-              skipProbe.add(index);
-              dupSkipped++;
-            }
-          });
-          if (dupSkipped > 0) {
-            logger.debug(
-              { nzbHash: nzb.hash, dupSkipped },
-              'lazy: skipping duplicate/fill copies of covered volume sets'
-            );
+  let par2Promise: Promise<Par2Index | undefined> | undefined;
+  const canFetchPar2 = !confirmedMiss && !opts.signal?.aborted;
+  const rarSets =
+    opts.lazyArchives && canFetchPar2
+      ? groupVolumeSets(
+          nzb.files.map((f, index) => ({
+            index,
+            filename: f.filename,
+            segments: f.segments.length,
+            firstSegmentNumber: f.segments[0]?.number,
+          }))
+        ).filter(
+          (s) =>
+            s.kind === 'rar' &&
+            s.members.length >= MIN_LAZY_VOLS &&
+            s.members.every(
+              (m) => nzb.files[m.index]?.segments[0]?.number === 1
+            )
+        )
+      : [];
+  if (rarSets.length > 0) {
+    // Name-keyed sizing decides probe skips, so this one must be in hand now.
+    par2Index = await prefetchPar2Index(nzb, pool, opts.signal);
+    par2Promise = Promise.resolve(par2Index);
+    if (par2Index) {
+      // Fill/repost NZBs carry duplicate copies of set members that dedup
+      // removed from `members`; left alone they'd each still pay a probe.
+      // The survivors carry all the evidence; skip the copies wholesale.
+      const lazyBases = new Set<string>();
+      const survivors = new Set<number>();
+      for (const set of rarSets) {
+        const sizes = set.members.map(
+          (m) => par2Index!.byName.get(par2NameKey(m.filename))?.length
+        );
+        // Every member needs an exact size, or offsets would be corrupt.
+        if (sizes.some((s) => !s || s <= 0)) continue;
+        set.members.forEach((m, i) => lazySizes.set(m.index, sizes[i]!));
+        for (const m of set.members.slice(1, -1)) skipProbe.add(m.index);
+        lazyBases.add(`${set.baseName} rar`);
+        for (const m of set.members) survivors.add(m.index);
+        logger.debug(
+          {
+            nzbHash: nzb.hash,
+            base: set.baseName,
+            volumes: set.members.length,
+            skipped: set.members.length - 2,
+          },
+          'lazy: par2 sizes cover the set; skipping middle-volume probes'
+        );
+      }
+      if (lazyBases.size > 0) {
+        let dupSkipped = 0;
+        nzb.files.forEach((f, index) => {
+          if (skipProbe.has(index) || survivors.has(index)) return;
+          const b = f.filename ? archiveBaseName(f.filename) : undefined;
+          if (b && lazyBases.has(`${b.base} ${b.kind}`)) {
+            skipProbe.add(index);
+            dupSkipped++;
           }
+        });
+        if (dupSkipped > 0) {
+          logger.debug(
+            { nzbHash: nzb.hash, dupSkipped },
+            'lazy: skipping duplicate/fill copies of covered volume sets'
+          );
         }
       }
     }
+  } else if (wantPar2 && canFetchPar2) {
+    // Obfuscated subjects group into nothing, so there is no set to size by
+    // name; race the fetch against the probe pass instead of gating on it.
+    par2Promise = withDeadline(
+      prefetchPar2Index(nzb, pool, opts.signal),
+      PAR2_INDEX_DEADLINE_MS
+    );
   }
 
   // PAR2 probes are pure waste when the descriptor index is already fetched
-  // (chase) or no file needs name recovery in the first place.
-  if (!wantPar2 || par2Index) {
+  // (chase) or no file needs name recovery in the first place. A raced fetch
+  // applies the skip when it lands; on failure they stay probed so
+  // `applyPar2Names` keeps its by-magic fallback.
+  const skipPar2Probes = (): void => {
     nzb.files.forEach((f, index) => {
       if (isPar2Name(f.filename)) skipProbe.add(index);
+    });
+  };
+  if (!wantPar2 || par2Index) skipPar2Probes();
+  else if (par2Promise) {
+    void par2Promise.then((index) => {
+      if (index) skipPar2Probes();
     });
   }
 
@@ -337,6 +381,7 @@ export async function buildProbePlan(
     liveNames,
     inferredNames,
     par2Index,
+    par2: () => par2Promise ?? Promise.resolve(undefined),
     wantPar2,
     dynamicRegroup,
   };

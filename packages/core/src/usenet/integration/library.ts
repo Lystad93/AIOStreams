@@ -243,9 +243,21 @@ export async function fetchNzb(
   }
 }
 
+/**
+ * Whether a persisted library file is a playback target.
+ */
+function isPlaybackTarget(f: UsenetLibraryFile): boolean {
+  if (f.streamable === false) return false;
+  return f.category === undefined || f.category === 'video';
+}
+
 /** Project a persisted library file onto the shared {@link DebridFile} shape. */
 function toDebridFile(f: UsenetLibraryFile): DebridFile {
   return { name: f.name, size: f.size, index: f.index, path: f.path };
+}
+
+export function toDebridFiles(files: UsenetLibraryFile[]): DebridFile[] {
+  return files.filter(isPlaybackTarget).map(toDebridFile);
 }
 
 /** Map a persisted library entry onto the shared {@link DebridDownload} shape. */
@@ -259,7 +271,7 @@ export function libraryEntryToDownload(
     size: entry.size,
     status: entry.status === 'failed' ? 'failed' : 'downloaded',
     library: true,
-    files: entry.files.map(toDebridFile),
+    files: toDebridFiles(entry.files),
   };
 }
 
@@ -484,7 +496,7 @@ async function importNzb(
     const files = collectLibraryFiles(content, releaseName, {
       eligibleOnly: spec.eligibleOnly,
     });
-    const playable = files.filter((f) => f.streamable !== false);
+    const playable = files.filter(isPlaybackTarget);
     if (playable.length === 0) {
       content.census?.cancel();
       const byCategory: Record<string, number> = {};
@@ -678,7 +690,7 @@ export async function resolveFileList(
   ) {
     UsenetLibraryRepository.touch(contentHash).catch(() => {});
     return {
-      files: existing.files.map(toDebridFile),
+      files: toDebridFiles(existing.files),
       nzbHash: contentHash,
       status: existing.status,
     };
@@ -747,7 +759,7 @@ export async function resolveFileList(
     throw toDebridError(err);
   }
   return {
-    files: imported.files.map(toDebridFile),
+    files: toDebridFiles(imported.files),
     nzbHash: contentHash,
     status: imported.status,
   };

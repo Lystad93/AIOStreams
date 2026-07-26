@@ -101,6 +101,7 @@ export type BlockResult =
       next: number;
       headerCrypt?: HeaderCrypt;
       archiveVolumeNumber?: number;
+      archiveIsFirstVolume?: boolean;
     };
 
 /** Per-volume context threaded through the block walk. */

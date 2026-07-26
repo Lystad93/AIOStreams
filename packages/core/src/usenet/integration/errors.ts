@@ -93,6 +93,15 @@ export function classifyNoStreamable(content: NzbContent): {
     if (hasInnerReason(reason))
       return { reason: ARCHIVE_REASONS[reason], code: reason };
   }
+  // Archives exist but none was opened, so there is no inner listing to
+  // classify: their volumes never grouped into a set.
+  const archives = content.files.filter((f) => f.category === 'archive');
+  if (archives.length > 0 && !content.files.some((f) => f.archiveInner)) {
+    return {
+      reason: 'Archive volumes could not be ordered into a set',
+      code: 'archive_ungrouped',
+    };
+  }
   return { reason: 'No streamable files in NZB', code: 'no_streamable_files' };
 }
 

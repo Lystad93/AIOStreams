@@ -21,6 +21,7 @@ import {
   addUsenetNzb,
   resolveFileList,
   selectStreamFile,
+  toDebridFiles,
   shouldSkipDegraded,
   hasRecentStreamActivity,
 } from '../usenet/integration/index.js';
@@ -131,12 +132,7 @@ export class NativeUsenetService implements UsenetDebridService {
         };
       }
       const files: DebridFile[] | undefined = entry?.files.length
-        ? entry.files.map((f) => ({
-            name: f.name,
-            size: f.size,
-            index: f.index,
-            path: f.path,
-          }))
+        ? toDebridFiles(entry.files)
         : undefined;
       return {
         id: hash ?? name ?? 'unknown',
@@ -312,14 +308,7 @@ export class NativeUsenetService implements UsenetDebridService {
       providers,
       options,
       this.owner,
-      existing?.files.length
-        ? existing.files.map((f) => ({
-            name: f.name,
-            size: f.size,
-            index: f.index,
-            path: f.path,
-          }))
-        : undefined,
+      existing?.files.length ? toDebridFiles(existing.files) : undefined,
       signal
     );
 

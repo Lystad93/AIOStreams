@@ -49,6 +49,11 @@ import {
   type ArchiveKind,
   type NumericSplitGroup,
 } from './pool/archive/archive-volume.js';
+import {
+  groupByVolumeIdentity,
+  identifyRarVolume,
+  type IdentifiedFile,
+} from './pool/archive/volume-identity.js';
 import { NotStreamableError } from './pool/archive/errors.js';
 import { parseNzb } from './nzb/parse.js';
 import { Nzb, NzbFile } from './nzb/model.js';
@@ -468,6 +473,48 @@ export class UsenetEngine {
   }
 
   /**
+   * Sets rebuilt from volume headers for the archive files name-based grouping
+   * left unplaced (see {@link ./pool/archive/volume-identity.js}). Costs no
+   * fetches: the probe heads are already in hand.
+   */
+  private async identitySets(
+    nzb: Nzb,
+    content: NzbContent,
+    refs: ContentFileRef[],
+    joined: ArchiveSetSpec[]
+  ): Promise<ArchiveSetSpec[]> {
+    if (!content.heads?.size) return [];
+    const claimed = new Set<number>();
+    for (const set of [...groupArchiveSets(refs), ...joined]) {
+      for (const i of set.memberIndices) claimed.add(i);
+    }
+    const candidates: IdentifiedFile[] = [];
+    for (const f of content.files) {
+      if (claimed.has(f.index)) continue;
+      if (f.error || f.category !== 'archive' || f.format !== 'rar') continue;
+      const head = content.heads.get(f.index);
+      if (!head) continue;
+      const identity = await identifyRarVolume(head);
+      if (identity) candidates.push({ index: f.index, identity });
+    }
+    if (candidates.length === 0) return [];
+    const sets = groupByVolumeIdentity(candidates);
+    logger.debug(
+      {
+        nzbHash: nzb.hash,
+        candidates: candidates.length,
+        sets: sets.map((s) => ({
+          volumes: s.memberIndices.length,
+          inner: candidates.find((c) => c.index === s.index)?.identity
+            .innerName,
+        })),
+      },
+      'grouped unnamed rar volumes by header identity'
+    );
+    return sets;
+  }
+
+  /**
    * Augment inspect results with stored inner-file listings for archive sets.
    * Returns whether any set was parsed in lazy mode (probe-skipped middles).
    */
@@ -571,6 +618,10 @@ export class UsenetEngine {
           }
         }
       }
+      const extraSets = [
+        ...joinedArchiveSets,
+        ...(await this.identitySets(nzb, content, refs, joinedArchiveSets)),
+      ];
       const sets = await inspectArchiveSets(refs, opener, {
         password: nzb.meta.password,
         // Modest fixed volume-size probing parallelism (bounded by the global
@@ -582,7 +633,7 @@ export class UsenetEngine {
         ),
         parseConcurrency,
         heads: content.heads,
-        extraSets: joinedArchiveSets,
+        extraSets,
         // A census-confirmed miss disables the lazy parse: skipped middles
         // would reduce exactly the evidence that maps the damage.
         allowLazy: !confirmedMiss && this.options.lazyRarResolution,

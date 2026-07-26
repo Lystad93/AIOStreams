@@ -51,17 +51,19 @@ export async function inspectNzb(
   // once it confirms a miss, evidence-reducing probe skips must not be added.
   const confirmedMiss = (): boolean => opts.hasConfirmedMiss?.() ?? false;
 
-  const plan = await buildProbePlan(nzb, pool, opts, confirmedMiss());
-  const { skipProbe, lazySizes, liveNames, inferredNames } = plan;
-
   // Merge the caller's signal into an internal controller we can trip ourselves
-  // (early-abort / stall / hard timeout). Probes use this combined signal.
+  // (early-abort / stall / hard timeout). Probes and the plan's par2 prefetch
+  // both use this combined signal.
   const ac = new AbortController();
   const onExternalAbort = () => ac.abort();
   if (opts.signal) {
     if (opts.signal.aborted) ac.abort();
     else opts.signal.addEventListener('abort', onExternalAbort, { once: true });
   }
+  const fileOpts: InspectOptions = { ...opts, signal: ac.signal };
+
+  const plan = await buildProbePlan(nzb, pool, fileOpts, confirmedMiss());
+  const { skipProbe, lazySizes, liveNames, inferredNames } = plan;
 
   let probed = 0;
   let missing = 0;
@@ -83,7 +85,6 @@ export async function inspectNzb(
     }
   }, 1_000);
   watchdog.unref?.();
-  const fileOpts: InspectOptions = { ...opts, signal: ac.signal };
 
   let results: InspectResult[];
   try {
@@ -129,7 +130,8 @@ export async function inspectNzb(
             pool,
             nzb.hash,
             fileOpts,
-            lazySizes.get(index)
+            lazySizes.get(index),
+            plan.par2
           );
           probed++;
           lastProgressAt = Date.now();
@@ -169,9 +171,11 @@ export async function inspectNzb(
   }
 
   // Skip PAR2 filename recovery on a dead post (its par2 is missing too) and
-  // when no file needed renaming in the first place.
+  // when no file needed renaming in the first place. Still needed once probes
+  // match the index themselves: this finds a par2 by MAGIC, so it also covers
+  // posts whose par2 subjects are obfuscated.
   if (!deadAbort && plan.wantPar2) {
-    await applyPar2Names(nzb, pool, results, opts, plan.par2Index);
+    await applyPar2Names(nzb, pool, results, opts, await plan.par2());
   }
 
   const files = results.map((r) => r.file);

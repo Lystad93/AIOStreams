@@ -14,6 +14,7 @@ const B15_FILE = 0x74;
 const B15_END = 0x7b;
 const B15_HAS_DATA = 0x8000;
 const ARC15_ENCRYPTED = 0x0080;
+const ARC15_FIRST_VOLUME = 0x0100;
 const F15_SPLIT_BEFORE = 0x0001;
 const F15_SPLIT_AFTER = 0x0002;
 const F15_ENCRYPTED = 0x0004;
@@ -118,9 +119,14 @@ function parseRar4Plain(buf: Buffer, dataOff: number): BlockResult | undefined {
   const next = dataOff + dataSize;
 
   if (htype === B15_END) return { kind: 'end', next };
-  if (htype === B15_ARC && flags & ARC15_ENCRYPTED) {
-    // -hp: every header after the (plaintext) main header is encrypted.
-    return { kind: 'other', next, headerCrypt: { v: 4 } };
+  if (htype === B15_ARC) {
+    return {
+      kind: 'other',
+      next,
+      // -hp: every header after the (plaintext) main header is encrypted.
+      headerCrypt: flags & ARC15_ENCRYPTED ? { v: 4 } : undefined,
+      archiveIsFirstVolume: (flags & ARC15_FIRST_VOLUME) !== 0,
+    };
   }
   if (htype !== B15_FILE) return { kind: 'other', next };
 

@@ -6,6 +6,11 @@ import {
   isProviderUnavailableError,
 } from '../../nntp/errors.js';
 import { YencDecodeError, isImplausibleYencFileSize } from '../yenc.js';
+import {
+  PAR2_HASH_BLOCK,
+  par2Md5_16k,
+  type Par2Index,
+} from '../../par2/decode.js';
 import { NzbFile } from '../../nzb/model.js';
 import { isProbablyObfuscated } from '../../nzb/obfuscation.js';
 import { CommandPriority } from '../../types.js';
@@ -59,7 +64,8 @@ export async function inspectFile(
   pool: MultiProviderPool,
   nzbHash: string,
   opts: InspectOptions,
-  knownSize?: number
+  knownSize?: number,
+  par2?: () => Promise<Par2Index | undefined>
 ): Promise<InspectResult> {
   if (file.segments.length === 0) {
     return {
@@ -100,15 +106,26 @@ export async function inspectFile(
       );
     }
 
-    const filename = pickProbeName(file.filename, first.name);
+    // PAR2 keys its descriptors on the md5 of a file's first 16KB, so only a
+    // head that starts at byte 0 can be matched against them.
+    const headAligned =
+      first.byteRange === undefined || first.byteRange[0] === 0;
+    const desc = headAligned
+      ? (await par2?.())?.byMd5_16k.get(
+          par2Md5_16k(first.head.subarray(0, PAR2_HASH_BLOCK))
+        )
+      : undefined;
+
+    const filename = desc?.filename ?? pickProbeName(file.filename, first.name);
     const type = detectFileType(first.head, filename);
 
     let size: number;
     let sizeExact: boolean;
-    if (knownSize && knownSize > 0) {
+    const exactSize = desc && desc.length > 0 ? desc.length : knownSize;
+    if (exactSize && exactSize > 0) {
       // PAR2 already pinned this file's exact length; trust it over any yEnc header
       // and skip the size-refinement fetch entirely.
-      size = knownSize;
+      size = exactSize;
       sizeExact = true;
     } else {
       const firstPartLen =
@@ -171,7 +188,7 @@ export async function inspectFile(
         streamable: type.streamable,
       },
       head: first.head,
-      headAligned: first.byteRange === undefined || first.byteRange[0] === 0,
+      headAligned,
     };
   } catch (err) {
     // Our own cancellation (early dead-abort / timeout): a clean skip, not a

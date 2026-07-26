@@ -191,7 +191,12 @@ function parseRar5Plain(buf: Buffer, dataOff: number): BlockResult | undefined {
       const [vol] = uvarint(buf, p + an);
       archiveVolumeNumber = vol;
     }
-    return { kind: 'other', next, archiveVolumeNumber };
+    return {
+      kind: 'other',
+      next,
+      archiveVolumeNumber,
+      archiveIsFirstVolume: archiveVolumeNumber === undefined,
+    };
   }
   if (htype !== B5_FILE) return { kind: 'other', next };
 
