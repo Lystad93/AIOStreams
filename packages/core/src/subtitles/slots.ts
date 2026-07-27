@@ -405,7 +405,13 @@ function parseImdbContentId(contentId: string): {
 export async function buildExternalSlots(
   userData: UserData,
   contentId: string,
-  filename: string | undefined
+  filename: string | undefined,
+  /**
+   * OpenSubtitles-format hash of the video, when the player supplies one. This
+   * is the only signal that yields a verified exact-FILE match rather than a
+   * name comparison, so it is worth threading all the way through.
+   */
+  videoHash?: string
 ): Promise<Subtitle[]> {
   const uuid = userData.uuid;
   if (!uuid || !filename) return [];
@@ -427,11 +433,11 @@ export async function buildExternalSlots(
   const filterKey = `${filters.providers?.join('+') ?? 'all'}|${
     filters.hearingImpaired === false ? 'nohi' : ''
   }${filters.forced === false ? 'nofor' : ''}`;
-  const cacheKey = `${imdbId}|${season ?? ''}|${episode ?? ''}|${ourKey}|${languages.join(',')}|${ourDurationMs ?? ''}|${filterKey}`;
+  const cacheKey = `${imdbId}|${season ?? ''}|${episode ?? ''}|${ourKey}|${languages.join(',')}|${ourDurationMs ?? ''}|${filterKey}|${videoHash ?? ''}`;
   let matches = await externalCache().get(cacheKey);
   if (matches === undefined) {
     matches = await findExternalSubtitles(
-      { imdbId, season, episode, languages, filename },
+      { imdbId, season, episode, languages, filename, movieHash: videoHash },
       {
         creds,
         filters,

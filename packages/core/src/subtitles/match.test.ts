@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { scoreRelease, matchesEpisode, durationsMatch } from './match.js';
+import { normaliseReleaseName } from './release-name.js';
 import { readZipEntries, subtitleEntries } from './providers/zip.js';
 import { buildSubtitleFilename, subtitleLanguageCode } from './naming.js';
 import { deflateRawSync, crc32 } from 'node:zlib';
@@ -245,4 +246,44 @@ test('subtitleLanguageCode: names and codes both resolve', () => {
   assert.equal(subtitleLanguageCode('spa'), 'spa');
   assert.equal(subtitleLanguageCode(undefined), undefined);
   assert.equal(subtitleLanguageCode('Not A Language'), undefined);
+});
+
+test('scoreRelease: a space-separated extension must not cost the exact tier', () => {
+  // Stremio hands back `filename` fully space-separated, so the trailing ".mkv"
+  // arrives as " mkv" and the dotted extension strip never fires. Left
+  // unhandled this dropped an identical release from 100% to 96%.
+  const played =
+    'Roofman 2025 Hybrid 2160p UHD Blu-ray Remux DV HDR10P HEVC TrueHD 5 1-CiNEPHiLES mkv';
+  const claimed =
+    'Roofman 2025 Hybrid 2160p UHD Blu-ray Remux DV HDR10P HEVC TrueHD 5 1-CiNEPHiLES';
+  const r = scoreRelease(played, [claimed]);
+  assert.equal(r.score, 100);
+  assert.equal(r.tier, 'exact-release');
+});
+
+test("scoreRelease: a provider's own language suffix is ignored", () => {
+  // SubSource names its file after the video plus the subtitle's language.
+  const played =
+    'Roofman 2025 Hybrid 2160p UHD Blu-ray Remux DV HDR10P HEVC TrueHD 5 1-CiNEPHiLES mkv';
+  const claimed =
+    'Roofman 2025 Hybrid 2160p UHD Blu-ray Remux DV HDR10P HEVC TrueHD 5 1-CiNEPHiLES.dan';
+  assert.equal(scoreRelease(played, [claimed]).tier, 'exact-release');
+});
+
+test('scoreRelease: leniency must not merge genuinely different releases', () => {
+  // A trailing "TS" is telesync — a source tag, not a container.
+  assert.notEqual(
+    normaliseReleaseName('Movie 2025 1080p HDCAM-GROUP TS'),
+    normaliseReleaseName('Movie 2025 1080p HDCAM-GROUP')
+  );
+  // Different groups stay different despite the dash-joined WEB-DL.
+  assert.notEqual(
+    normaliseReleaseName('Show.1080p.WEB-DL-Kitsune'),
+    normaliseReleaseName('Show.1080p.WEB-DL-XEBEC')
+  );
+  // A non-language 3-letter suffix is not stripped.
+  assert.notEqual(
+    scoreRelease('Movie 2025 GROUP mkv', ['Movie 2025 GROUP xyz']).tier,
+    'exact-release'
+  );
 });

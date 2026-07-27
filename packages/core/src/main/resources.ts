@@ -1224,10 +1224,12 @@ export async function getSubtitles(
     // Gating and language selection live in resolveExternalConfig: this works
     // without the translation feature, since matching a subtitle to a release
     // needs no AI key and downloads no video.
+    const parsedExtras = new ExtrasParser(extras);
     const external = await buildExternalSlots(
       ctx.userData,
       id,
-      new ExtrasParser(extras).filename
+      parsedExtras.filename,
+      parsedExtras.videoHash
     );
     if (external.length > 0) allSubtitles.push(...external);
   } catch (error) {

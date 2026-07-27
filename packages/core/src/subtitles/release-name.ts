@@ -18,6 +18,21 @@ const VIDEO_EXTENSIONS =
   /\.(mkv|mp4|avi|m4v|mov|wmv|flv|webm|mpg|mpeg|m2ts|ts|ogm|divx|vob)$/i;
 
 /**
+ * The same extensions once separators have been flattened to spaces.
+ *
+ * Players don't always hand back a filename with its dot intact — Stremio's
+ * `filename` extra frequently arrives fully space-separated
+ * (`…TrueHD 5 1-CiNEPHiLES mkv`), so the dotted strip above never fires and
+ * `mkv` survives as a token, dropping an otherwise identical release out of the
+ * exact-match tier.
+ *
+ * `ts` is deliberately absent: a trailing `TS` is telesync (a source tag), not
+ * a container, and stripping it would merge two genuinely different releases.
+ */
+const TRAILING_EXTENSION =
+  /\s(mkv|mp4|avi|m4v|mov|wmv|flv|webm|mpg|mpeg|m2ts|ogm|divx|vob)$/i;
+
+/**
  * Suffixes some sites append when re-hosting an existing release
  * (`…-Kitsune-WtF`). These are matched as an explicit list on purpose.
  *
@@ -73,6 +88,9 @@ export function normaliseReleaseName(filename: string | undefined): string {
   // Dots, underscores, plus signs and runs of whitespace are all just
   // separators — the same release uses different ones across addons.
   name = name.replace(/[._+\s]+/g, ' ').trim();
+  // Second pass, for names whose extension arrived separator-joined rather than
+  // dotted — the dotted strip above cannot see those.
+  name = name.replace(TRAILING_EXTENSION, '');
 
   // Drop re-upload tags, repeatedly (a file may carry more than one).
   const tags = reuploadTags();

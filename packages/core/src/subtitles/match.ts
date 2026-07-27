@@ -10,6 +10,24 @@
  *   `similar`       — token overlap, reported as its real percentage.
  */
 import { normaliseReleaseName } from './release-name.js';
+import { normaliseLanguage } from '../utils/languages.js';
+
+/**
+ * A subtitle site's copy of a release name, with its own language tag removed
+ * (`…-CiNEPHiLES.dan` on SubSource, `….eng` on others).
+ *
+ * Applied only to the CLAIMED name, never to ours: `normaliseReleaseName` is a
+ * storage key (duration index, stored-subtitle lookup) and has to stay
+ * conservative, whereas this is purely a matching concession. Gated on the
+ * token really being a language, since a bare 2–3 letter suffix is otherwise
+ * indistinguishable from a short release group.
+ */
+function claimedKey(name: string): string {
+  const key = normaliseReleaseName(name);
+  const match = key.match(/\s([a-z]{2,3})$/);
+  if (!match) return key;
+  return normaliseLanguage(match[1]) ? key.slice(0, -match[0].length) : key;
+}
 
 export type MatchTier = 'exact-file' | 'exact-release' | 'similar';
 
@@ -67,8 +85,8 @@ const NOISE_TOKENS = new Set([
   'english',
 ]);
 
-function tokenise(name: string): Set<string> {
-  const canonical = normaliseReleaseName(name);
+function tokenise(name: string, claimed = false): Set<string> {
+  const canonical = claimed ? claimedKey(name) : normaliseReleaseName(name);
   if (!canonical) return new Set();
   return new Set(
     canonical
@@ -103,7 +121,7 @@ export function scoreRelease(
   // An exact canonical match is real evidence: both sides went through the same
   // normalisation, so extension/separator/re-upload noise is already gone.
   for (const claimed of claimedReleaseNames) {
-    if (normaliseReleaseName(claimed) === ourKey) {
+    if (claimedKey(claimed) === ourKey) {
       return { score: 100, tier: 'exact-release' };
     }
   }
@@ -111,7 +129,7 @@ export function scoreRelease(
   const ourTokens = tokenise(ourFilename ?? '');
   let best = 0;
   for (const claimed of claimedReleaseNames) {
-    best = Math.max(best, diceScore(ourTokens, tokenise(claimed)));
+    best = Math.max(best, diceScore(ourTokens, tokenise(claimed, true)));
   }
   // Never let a token overlap claim 100 — that tier means verified identity.
   return { score: Math.min(best, 99), tier: 'similar' };

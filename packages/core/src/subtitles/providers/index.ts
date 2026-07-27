@@ -113,12 +113,16 @@ export async function findExternalSubtitles(
       try {
         return await client.search(query, creds);
       } catch (err) {
-        logger.debug(
-          {
-            provider: client.id,
-            err: err instanceof Error ? err.message : String(err),
-          },
-          'external subtitle provider search failed'
+        const message = err instanceof Error ? err.message : String(err);
+        // An auth failure is a configuration mistake the user can fix, not a
+        // transient blip — and silently returning [] makes a dead provider look
+        // like one that simply had no matches. Say so at a level that shows up.
+        const authFailure = /\((401|403)\)/.test(message);
+        logger[authFailure ? 'warn' : 'debug'](
+          { provider: client.id, err: message },
+          authFailure
+            ? `${client.id} rejected the API key (check the key in your user settings, or the instance-wide key in .env) — no ${client.id} results will appear`
+            : 'external subtitle provider search failed'
         );
         return [] as ExternalSubtitleCandidate[];
       }
