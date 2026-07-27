@@ -120,7 +120,7 @@ export function TranslationProviders({ disabled }: { disabled?: boolean }) {
           strategy={verticalListSortingStrategy}
         >
           <ul className="space-y-2">
-            {providers.map((provider, index) => (
+            {providers.map((provider) => (
               <SortableProviderItem
                 key={provider.id}
                 provider={provider}

@@ -21,6 +21,16 @@ export const subtitlesSchema = {
     requiresRestart: false,
     secret: false,
   },
+  retentionDays: {
+    schema: z.number().int(),
+    default: -1,
+    label: 'Subtitle retention (days)',
+    description:
+      'Delete stored subtitle jobs, and their extracted/translated SRT bodies, once they are older than this many days. Each job holds two full SRT files, so on a busy instance this table grows without bound. Set -1 to keep everything forever (the default). Orphaned jobs whose user no longer exists are always removed, regardless of this setting.',
+    env: 'SUBTITLE_RETENTION_DAYS',
+    requiresRestart: false,
+    secret: false,
+  },
   extractionAllowed: {
     schema: z.boolean(),
     default: true,

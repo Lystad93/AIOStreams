@@ -1,5 +1,8 @@
 import { Router, Request, Response } from 'express';
+import { corsMiddleware } from '../../middlewares/cors.js';
+import { stremioSubtitleRateLimiter } from '../../middlewares/ratelimit.js';
 import {
+  appConfig,
   createLogger,
   decryptString,
   validateConfig,
@@ -26,19 +29,33 @@ import {
 /**
  * Subtitle job endpoints (spec §5). Stremio/Nuvio fetch a slot's `url` directly
  * with no auth context, so identity + the owner's encrypted password travel
- * inside the encrypted token minted by the slot builder. Two actions:
+ * inside the encrypted token minted by the slot builder. Three actions:
  *
  *  - `exact`  → start (or re-start after failure) the extract+translate job and
  *               return an immediate placeholder subtitle. Never blocks on the
  *               job (spec §5).
  *  - `result` → return the finished translated SRT once done, otherwise a
  *               "not ready" placeholder.
+ *  - `external` → fetch an externally-sourced subtitle (spec §4.5). Served by
+ *               its own route above: the token carries a provider reference
+ *               rather than a job identity, so it needs no user config.
  *
  * Everything the response says is delivered AS a subtitle file, because that's
  * the only channel the subtitle protocol gives us (spec §3.3).
  */
 const logger = createLogger('server');
 const router: Router = Router();
+
+// These routes are player-facing, not SPA-facing: the URLs are handed to
+// Stremio/Nuvio in the subtitle list and fetched directly. That makes them
+// unlike their /api/v1 siblings and like the /stremio routers, so they need the
+// same two guards.
+//   - CORS, because a browser-based player enforces it (the API router only
+//     gets corsMiddleware in development).
+//   - A rate limit, because these endpoints are unauthenticated and `exact`
+//     starts a full-file download.
+router.use(corsMiddleware);
+router.use(stremioSubtitleRateLimiter);
 
 /** Build a one-cue SRT carrying a status message to the player. */
 function messageSrt(text: string, seconds = 20): string {
@@ -85,6 +102,18 @@ async function loadOwnerConfig(payload: SubtitleTokenPayload) {
 router.get(
   '/external/:token',
   async (req: Request<{ token: string }>, res: Response) => {
+    // Re-check the instance switch: a token minted while the feature was on
+    // stays valid, so without this an operator turning it off would not
+    // actually stop provider traffic.
+    if (!appConfig.subtitles.externalEnabled) {
+      sendSrt(
+        res,
+        messageSrt(
+          'AIOStreams: external subtitle search is disabled on this instance.'
+        )
+      );
+      return;
+    }
     const token = decodeURIComponent(req.params.token).replace(/\.srt$/i, '');
     const payload = decodeExternalToken(token);
     if (!payload) {
@@ -166,9 +195,6 @@ router.get(
         sendSrt(res, messageSrt('AIOStreams: unknown subtitle action.'));
         return;
       }
-      // (external is handled by its own route below — it carries a different
-      // token shape and needs no user config.)
-
       // --- exact: start the job, return a placeholder ------------------------
       const userData = await loadOwnerConfig(payload);
       if (!userData) {

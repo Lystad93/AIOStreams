@@ -15,7 +15,7 @@ import { createResponse } from '../../utils/responses.js';
  *  - `GET /:id/translated.srt`     → download the translated SRT
  *  - `DELETE /:id`                 → remove a job record + its stored SRTs
  */
-const logger = createLogger('dashboard');
+const logger = createLogger('dashboard:subtitles');
 const router: Router = Router();
 
 router.get('/', async (req: Request, res: Response) => {

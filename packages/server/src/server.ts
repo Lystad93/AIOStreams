@@ -159,6 +159,29 @@ function registerUsenetTasks() {
   });
 }
 
+function registerSubtitleTasks() {
+  TaskManager.register({
+    id: 'prune-subtitle-jobs',
+    label: 'Prune subtitle jobs',
+    description:
+      'Deletes stored subtitle jobs past the retention window, and any whose ' +
+      'user no longer exists. Each job holds two full SRT bodies.',
+    category: 'data-sync',
+    kind: 'scheduled',
+    intervalMs: 24 * 60 * 60_000,
+    enabled: true,
+    destructive: true,
+    multiReplica: 'single',
+    run: async () => {
+      const n = await SubtitleJobRepository.prune(
+        appConfig.subtitles.retentionDays,
+        Date.now()
+      );
+      return { ok: true, message: `pruned ${n} subtitle job(s)` };
+    },
+  });
+}
+
 function registerReleaseBlocklistTasks() {
   TaskManager.register({
     id: 'release-blocklist-refresh',
@@ -268,6 +291,7 @@ async function start() {
     registerCacheTasks();
     registerUsenetTasks();
     registerReleaseBlocklistTasks();
+    registerSubtitleTasks();
     void requeueInterruptedInspects();
     await initialiseAuth();
     startAnalytics();

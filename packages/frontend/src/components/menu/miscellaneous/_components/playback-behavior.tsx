@@ -27,6 +27,14 @@ const SUBTITLE_LANGUAGE_OPTIONS = LANGUAGES.map((lang) => ({
 
 export function PlaybackBehavior() {
   const { userData, setUserData } = useUserData();
+  // Same fallback the backend applies (see resolveExternalConfig): a config
+  // written before `externalSubtitles` existed has the feature on by virtue of
+  // subtitle translation being on. Reading the raw flag here instead would
+  // render the section switched ON with every field greyed out.
+  const externalEnabled =
+    userData.externalSubtitles?.enabled ??
+    userData.subtitleTranslation?.enabled ??
+    false;
 
   return (
     <>
@@ -204,11 +212,7 @@ export function PlaybackBehavior() {
           label="Enable"
           side="right"
           help="When off, no external subtitle entries are offered."
-          value={
-            userData.externalSubtitles?.enabled ??
-            userData.subtitleTranslation?.enabled ??
-            false
-          }
+          value={externalEnabled}
           onValueChange={(value) => {
             setUserData((prev) => ({
               ...prev,
@@ -219,7 +223,7 @@ export function PlaybackBehavior() {
         <Combobox
           label="Languages"
           multiple
-          disabled={!userData.externalSubtitles?.enabled}
+          disabled={!externalEnabled}
           help="Which subtitle languages to look for. Leave empty to reuse the translation languages below (target first, then your source languages)."
           options={SUBTITLE_LANGUAGE_OPTIONS}
           emptyMessage="No languages found"
@@ -247,7 +251,7 @@ export function PlaybackBehavior() {
             </p>
             <SortableList
               items={userData.externalSubtitles?.languages ?? []}
-              disabled={!userData.externalSubtitles?.enabled}
+              disabled={!externalEnabled}
               onChange={(languages) => {
                 setUserData((prev) => ({
                   ...prev,
@@ -268,7 +272,7 @@ export function PlaybackBehavior() {
             key={id}
             label={`Search ${name}`}
             side="right"
-            disabled={!userData.externalSubtitles?.enabled}
+            disabled={!externalEnabled}
             help={`Turn off to stop offering ${name} results. This overrides any key — including one set by this instance's owner.`}
             value={userData.externalSubtitles?.providers?.[id] ?? true}
             onValueChange={(value) => {
@@ -288,7 +292,7 @@ export function PlaybackBehavior() {
         <Switch
           label="Include hearing impaired (SDH)"
           side="right"
-          disabled={!userData.externalSubtitles?.enabled}
+          disabled={!externalEnabled}
           help="Tracks that add speaker labels and sound descriptions like [door creaks]. SDH and HI are two names for the same thing. Also applies to which embedded track is extracted for translation."
           value={userData.externalSubtitles?.includeHearingImpaired ?? true}
           onValueChange={(value) => {
@@ -304,7 +308,7 @@ export function PlaybackBehavior() {
         <Switch
           label="Include forced"
           side="right"
-          disabled={!userData.externalSubtitles?.enabled}
+          disabled={!externalEnabled}
           help="Forced tracks only cover foreign-language dialogue, so they look broken if picked as a full subtitle track. Also applies to which embedded track is extracted for translation."
           value={userData.externalSubtitles?.includeForced ?? true}
           onValueChange={(value) => {
@@ -320,7 +324,7 @@ export function PlaybackBehavior() {
         <PasswordInput
           label="SubSource API key"
           autoComplete="off"
-          disabled={!userData.externalSubtitles?.enabled}
+          disabled={!externalEnabled}
           help="Your own key. Leave blank to use the one configured by this instance's owner."
           value={userData.externalSubtitles?.subsourceApiKey ?? ''}
           onValueChange={(value) => {
@@ -336,7 +340,7 @@ export function PlaybackBehavior() {
         <PasswordInput
           label="SubDL API key"
           autoComplete="off"
-          disabled={!userData.externalSubtitles?.enabled}
+          disabled={!externalEnabled}
           help="Your own key. Leave blank to use the one configured by this instance's owner."
           value={userData.externalSubtitles?.subdlApiKey ?? ''}
           onValueChange={(value) => {
@@ -351,7 +355,7 @@ export function PlaybackBehavior() {
         />
         <TextInput
           label="OpenSubtitles username"
-          disabled={!userData.externalSubtitles?.enabled}
+          disabled={!externalEnabled}
           help="OpenSubtitles downloads use a personal daily quota, so searching works with the instance key but downloading needs your own account."
           value={userData.externalSubtitles?.opensubtitlesUsername ?? ''}
           onValueChange={(value) => {
@@ -367,7 +371,7 @@ export function PlaybackBehavior() {
         <PasswordInput
           label="OpenSubtitles password"
           autoComplete="off"
-          disabled={!userData.externalSubtitles?.enabled}
+          disabled={!externalEnabled}
           value={userData.externalSubtitles?.opensubtitlesPassword ?? ''}
           onValueChange={(value) => {
             setUserData((prev) => ({

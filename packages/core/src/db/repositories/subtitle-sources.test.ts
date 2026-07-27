@@ -95,6 +95,49 @@ test('subtitle_sources: re-extracting the same release upserts rather than dupli
   assert.equal(await SubtitleSourceRepository.getSrt(id), 'UPDATED SRT');
 });
 
+test('subtitle_sources: an upsert refreshes the track descriptors, not just the body', async () => {
+  // Re-extraction can pick a different track (source-language priority changed,
+  // or forced/SDH newly excluded). Updating the SRT while keeping the previous
+  // track's flags would leave pickSource ranking on stale metadata.
+  const FILE2 = 'Upsert.Descriptors.2160p.WEB-DL-GROUP.mkv';
+  const id = sourceId({
+    filename: FILE2,
+    lang: 'English',
+    origin: 'extracted',
+  });
+  await SubtitleSourceRepository.put({
+    id,
+    filename: FILE2,
+    lang: 'English',
+    origin: 'extracted',
+    trackIndex: 2,
+    trackTitle: 'Forced',
+    forced: true,
+    hearingImpaired: true,
+    srt: 'FIRST',
+    createdAt: 1000,
+  });
+  await SubtitleSourceRepository.put({
+    id,
+    filename: FILE2,
+    lang: 'English',
+    origin: 'extracted',
+    trackIndex: 5,
+    trackTitle: 'Full',
+    forced: false,
+    hearingImpaired: false,
+    srt: 'SECOND',
+    createdAt: 2000,
+  });
+
+  const [row] = await SubtitleSourceRepository.findByFilename(FILE2);
+  assert.equal(await SubtitleSourceRepository.getSrt(id), 'SECOND');
+  assert.equal(row.forced, false);
+  assert.equal(row.hearingImpaired, false);
+  assert.equal(row.trackIndex, 5);
+  assert.equal(row.trackTitle, 'Full');
+});
+
 test('subtitle_sources: found under any addon spelling of the same release', async () => {
   const STORED = 'Alt.S01E02.1080p.WEB-DL.H.264-Kitsune.mkv';
   await SubtitleSourceRepository.put({

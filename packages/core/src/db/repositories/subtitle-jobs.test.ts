@@ -162,6 +162,21 @@ test('filterTranslated: returns only ids with a stored translation', async () =>
   // Empty input must not build an invalid `IN ()` query.
   assert.equal((await SubtitleJobRepository.filterTranslated([])).size, 0);
 
+  // Non-empty input whose every name normalises away is the subtler version of
+  // the same trap: `filenames` is non-empty but the derived match-key list is
+  // empty, which SQLite tolerates as `IN ()` and Postgres rejects outright.
+  assert.equal(
+    (
+      await SubtitleJobRepository.findTranslatedByFilenames(
+        'u1',
+        'tt1',
+        'Norwegian',
+        ['.mkv']
+      )
+    ).size,
+    0
+  );
+
   // Clean up: the `running` row would otherwise leak into the
   // markInterrupted test's expected count (tests share one DB).
   await SubtitleJobRepository.delete('has-srt');

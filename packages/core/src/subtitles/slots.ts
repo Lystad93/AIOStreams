@@ -4,9 +4,10 @@
  * server-side, from the request's own identity fields (spec §3.3). A slot with
  * nothing to say is simply omitted (spec §3.4).
  *
- * This pass implements the exact-file path only: the "Translate Exact",
- * "not ready" and "FINISHED" trio from the §5 table. Fast/External/Resync slots
- * are follow-on work.
+ * Covers the exact-file path — the "Translate Exact", "not ready" and
+ * "FINISHED" trio from the §5 table — plus the externally-sourced slots
+ * (§4.5) built by `buildExternalSlots`. Fast alternate-source (§4.3) and
+ * Resync (§4.6) remain follow-on work.
  *
  * The `id` field carries the distinguishing slot label so it surfaces as
  * Nuvio's third line (spec §5.1); `lang` carries the human-facing text Stremio

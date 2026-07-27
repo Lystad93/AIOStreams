@@ -136,10 +136,26 @@ export const SubtitleSourceRepository = {
         ${source.srt}, ${source.createdBy ?? null}, ${source.createdAt},
         ${normaliseReleaseName(source.filename) || null}
       )
+      -- Re-extracting a release can legitimately pick a DIFFERENT track (the
+      -- user reordered source languages, or now excludes forced/SDH), so every
+      -- column describing the stored SRT is refreshed. Updating the body while
+      -- keeping the old track's flags left pickSource ranking on stale
+      -- forced/hearing_impaired values. Provenance (created_by/created_at) is
+      -- deliberately preserved.
       ON CONFLICT (id) DO UPDATE SET
         srt = ${source.srt},
+        lang = ${source.lang},
+        origin = ${source.origin},
+        track_index = ${source.trackIndex ?? null},
+        track_codec = ${source.trackCodec ?? null},
+        track_title = ${source.trackTitle ?? null},
+        forced = ${source.forced},
+        hearing_impaired = ${source.hearingImpaired},
         duration_ms = ${source.durationMs ?? null},
         fps = ${source.fps ?? null},
+        width = ${source.width ?? null},
+        height = ${source.height ?? null},
+        video_codec = ${source.videoCodec ?? null},
         cue_count = ${source.cueCount ?? null},
         first_cue_ms = ${source.firstCueMs ?? null},
         last_cue_ms = ${source.lastCueMs ?? null}
@@ -204,6 +220,11 @@ export const SubtitleSourceRepository = {
     const keys = [
       ...new Set(filenames.map((f) => normaliseReleaseName(f))),
     ].filter(Boolean);
+    // See findTranslatedByFilenames: `keys` can empty out while `filenames`
+    // does not, and an empty `IN ()` is a Postgres syntax error.
+    const byMatchKey = keys.length
+      ? sql`match_key IN (${join(keys.map((k) => sql`${k}`))}) OR `
+      : sql``;
     const rows = await getDb().query<{
       [k: string]: unknown;
       filename: string;
@@ -212,8 +233,7 @@ export const SubtitleSourceRepository = {
       sql`
         SELECT DISTINCT filename, match_key FROM subtitle_sources
         WHERE (
-          match_key IN (${join(keys.map((k) => sql`${k}`))})
-          OR filename IN (${join(filenames.map((f) => sql`${f}`))})
+          ${byMatchKey}filename IN (${join(filenames.map((f) => sql`${f}`))})
         )${scope}
       `
     );

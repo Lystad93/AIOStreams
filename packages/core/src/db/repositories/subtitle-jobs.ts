@@ -214,19 +214,16 @@ export const SubtitleJobRepository = {
    * Returns how many were reconciled.
    */
   async markInterrupted(at: number): Promise<number> {
-    const stuck = await getDb().count(
-      sql`SELECT COUNT(*) FROM subtitle_jobs WHERE status IN ('pending','running')`
-    );
-    if (stuck > 0) {
-      await getDb().exec(sql`
-        UPDATE subtitle_jobs
-        SET status = 'failed',
-            error = 'Interrupted by a server restart',
-            updated_at = ${at}
-        WHERE status IN ('pending','running')
-      `);
-    }
-    return stuck;
+    // One statement: a separate COUNT would both duplicate the scan and let a
+    // job finish between the two, reporting a number that was never true.
+    const { rowCount } = await getDb().exec(sql`
+      UPDATE subtitle_jobs
+      SET status = 'failed',
+          error = 'Interrupted by a server restart',
+          updated_at = ${at}
+      WHERE status IN ('pending','running')
+    `);
+    return rowCount ?? 0;
   },
 
   /**
@@ -250,6 +247,13 @@ export const SubtitleJobRepository = {
     const keys = [
       ...new Set(filenames.map((f) => normaliseReleaseName(f))),
     ].filter(Boolean);
+    // Guard the array actually interpolated, not `filenames`: a name that
+    // normalises away to nothing (e.g. a bare ".mkv") leaves `keys` empty while
+    // `filenames` is not, and `IN ()` is a Postgres syntax error even though
+    // SQLite tolerates it.
+    const byMatchKey = keys.length
+      ? sql`match_key IN (${join(keys.map((k) => sql`${k}`))}) OR `
+      : sql``;
     const rows = await getDb().query<{
       [k: string]: unknown;
       id: string;
@@ -263,8 +267,7 @@ export const SubtitleJobRepository = {
         AND translated_srt IS NOT NULL
         AND LENGTH(translated_srt) > 0
         AND (
-          match_key IN (${join(keys.map((k) => sql`${k}`))})
-          OR filename IN (${join(filenames.map((f) => sql`${f}`))})
+          ${byMatchKey}filename IN (${join(filenames.map((f) => sql`${f}`))})
         )
     `);
     // Report hits under the caller's own spelling of the filename.
@@ -327,7 +330,10 @@ export const SubtitleJobRepository = {
         AND release_duration_ms IS NOT NULL
         AND release_duration_ms BETWEEN ${durationMs - toleranceMs}
                                     AND ${durationMs + toleranceMs}
-      ORDER BY completed_at DESC
+      -- SQLite sorts NULLs low and Postgres sorts them high, and equal
+      -- timestamps otherwise tie arbitrarily — spell both out so the two
+      -- backends pick the same row.
+      ORDER BY (completed_at IS NULL), completed_at DESC, id DESC
       LIMIT 1
     `);
     return row?.id;
@@ -348,5 +354,31 @@ export const SubtitleJobRepository = {
 
   async delete(id: string): Promise<void> {
     await getDb().exec(sql`DELETE FROM subtitle_jobs WHERE id = ${id}`);
+  },
+
+  /**
+   * Drop jobs older than `maxDays`, and any whose user no longer exists.
+   *
+   * Each row carries two full SRT bodies, so this table is the one part of the
+   * feature that grows without bound. `uuid` is a plain column rather than a
+   * foreign key (jobs outlive individual configs by design), which means user
+   * pruning cannot cascade — orphans are collected here instead, and always,
+   * since nobody can reach them. A negative `maxDays` disables the age sweep
+   * only, matching the user-pruning convention.
+   */
+  async prune(maxDays: number, now: number): Promise<number> {
+    let removed = 0;
+    if (maxDays >= 0) {
+      const cutoff = now - maxDays * 24 * 60 * 60 * 1000;
+      const { rowCount } = await getDb().exec(
+        sql`DELETE FROM subtitle_jobs WHERE created_at < ${cutoff}`
+      );
+      removed += rowCount ?? 0;
+    }
+    const { rowCount: orphaned } = await getDb().exec(sql`
+      DELETE FROM subtitle_jobs
+      WHERE uuid NOT IN (SELECT uuid FROM users)
+    `);
+    return removed + (orphaned ?? 0);
   },
 };

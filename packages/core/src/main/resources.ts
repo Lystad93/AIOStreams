@@ -717,7 +717,15 @@ function recordReleasesForSubtitles(
   id: string,
   streams: ParsedStream[]
 ): void {
-  if (!ctx.userData?.uuid || !ctx.userData.subtitleTranslation?.enabled) return;
+  // Gated on either feature, not just translation: the same index also gives
+  // externally-sourced subtitles their per-release runtimes, and external
+  // search is deliberately usable without an AI key. Checking only translation
+  // left duration matching permanently dark for external-only users.
+  const subtitlesActive =
+    ctx.userData?.subtitleTranslation?.enabled ||
+    ctx.userData?.externalSubtitles?.enabled ||
+    false;
+  if (!ctx.userData?.uuid || !subtitlesActive) return;
   const uuid = ctx.userData.uuid;
   setImmediate(() => {
     recordServedReleases(

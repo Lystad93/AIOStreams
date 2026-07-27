@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BiTrash, BiDownload, BiCaptions } from 'react-icons/bi';
 import { PageWrapper } from '@/components/shared/page-wrapper';
 import { Card } from '@/components/ui/card';
-import { IconButton } from '@/components/ui/button';
+import { Button, IconButton } from '@/components/ui/button';
 import { cn } from '@/components/ui/core/styling';
 import {
   ConfirmationDialog,
@@ -57,11 +57,18 @@ function fmtTime(ms?: number): string {
   return new Date(ms).toLocaleString();
 }
 
+const PAGE_SIZE = 100;
+
 export function SubtitlesPage() {
   const qc = useQueryClient();
+  // The API pages at 100 by default and reports the true total; without
+  // requesting an offset the header would advertise jobs the table can never
+  // show.
+  const [offset, setOffset] = React.useState(0);
   const query = useQuery({
-    queryKey: ['dashboard', 'subtitles'],
-    queryFn: () => api<JobList>('/dashboard/subtitles'),
+    queryKey: ['dashboard', 'subtitles', offset],
+    queryFn: () =>
+      api<JobList>(`/dashboard/subtitles?limit=${PAGE_SIZE}&offset=${offset}`),
     refetchInterval: 10_000,
   });
 
@@ -84,6 +91,9 @@ export function SubtitlesPage() {
   });
 
   const total = query.data?.total;
+  const shown = query.data?.jobs?.length ?? 0;
+  const hasPrev = offset > 0;
+  const hasNext = total != null && offset + shown < total;
 
   return (
     <PageWrapper className="p-4 sm:p-8 space-y-4">
@@ -92,7 +102,11 @@ export function SubtitlesPage() {
           <h2>Subtitle Translations</h2>
           <p className="text-[--muted]">
             {total != null
-              ? `${total} job${total === 1 ? '' : 's'} · extracted & translated .srt files`
+              ? `${total} job${total === 1 ? '' : 's'}${
+                  total > PAGE_SIZE
+                    ? ` · showing ${offset + 1}–${offset + shown}`
+                    : ''
+                } · extracted & translated .srt files`
               : 'Extraction + AI translation jobs'}
           </p>
         </div>
@@ -242,6 +256,27 @@ export function SubtitlesPage() {
           )
         }
       </DashboardQueryBoundary>
+
+      {(hasPrev || hasNext) && (
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            size="sm"
+            intent="gray-outline"
+            disabled={!hasPrev}
+            onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}
+          >
+            Previous
+          </Button>
+          <Button
+            size="sm"
+            intent="gray-outline"
+            disabled={!hasNext}
+            onClick={() => setOffset((o) => o + PAGE_SIZE)}
+          >
+            Next
+          </Button>
+        </div>
+      )}
 
       <p className="text-xs text-[--muted]">
         SRT files are stored with each job so they can be re-downloaded here.
