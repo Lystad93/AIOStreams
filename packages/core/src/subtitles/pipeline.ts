@@ -35,11 +35,22 @@ const logger = createLogger('subtitles');
 /** Cold-start translation throughput seed (spec §6): 2 minutes. */
 const TRANSLATION_SEED_SECONDS = 120;
 /**
- * Fallback backbone throughput when no measured provider speed is available
- * (spec §6 wants the dashboard's tracked speed; until that's threaded in, this
- * conservative default keeps ETAs sane). ~15 MB/s.
+ * Assumed end-to-end extraction throughput when nothing better is known.
+ *
+ * This is NOT raw backbone speed: ffmpeg has to stream the container through
+ * to demux a subtitle track, so the figure that matters is bytes-per-second
+ * observed across a whole extraction. Measured against a 20 GB remux that took
+ * upwards of five minutes, ~50 MB/s is about right, and erring slightly slow is
+ * deliberate — an ETA that overshoots reads as cautious, one that undershoots
+ * reads as broken.
  */
-const DEFAULT_BYTES_PER_SEC = 15 * 1024 * 1024;
+const DEFAULT_BYTES_PER_SEC = 50 * 1024 * 1024;
+/**
+ * Stand-in size when the release didn't report one. The old fallback was a flat
+ * 60 seconds, which quoted "~3m" for files that genuinely take half an hour;
+ * assuming a large-ish file is the honest direction to be wrong in.
+ */
+const ASSUMED_SIZE_BYTES = 8 * 1024 * 1024 * 1024;
 
 /**
  * Precompute the ETA baked into the slot label (spec §6). Extraction transits
@@ -52,13 +63,17 @@ export function estimateEtaSeconds(opts: {
   /** A stored source subtitle exists, so nothing has to be downloaded. */
   reuseSource?: boolean;
 }): number {
+  // Reuse skips the transit entirely: only the LLM round-trips remain.
   if (opts.reuseSource) return TRANSLATION_SEED_SECONDS;
   const speed =
     opts.bytesPerSec && opts.bytesPerSec > 0
       ? opts.bytesPerSec
       : DEFAULT_BYTES_PER_SEC;
-  const downloadSeconds = opts.fileSizeBytes ? opts.fileSizeBytes / speed : 60;
-  return Math.round(downloadSeconds + TRANSLATION_SEED_SECONDS);
+  const size =
+    opts.fileSizeBytes && opts.fileSizeBytes > 0
+      ? opts.fileSizeBytes
+      : ASSUMED_SIZE_BYTES;
+  return Math.round(size / speed + TRANSLATION_SEED_SECONDS);
 }
 
 export interface RunJobInput {

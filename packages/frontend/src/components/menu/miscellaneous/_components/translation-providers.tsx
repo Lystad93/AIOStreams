@@ -77,24 +77,41 @@ export function TranslationProviders({ disabled }: { disabled?: boolean }) {
     })
   );
 
-  const write = (next: ProviderEntry[]) => {
+  /**
+   * Every write derives the next list from `prev`, never from the `providers`
+   * computed during render.
+   *
+   * The render-time list goes stale the moment another edit lands: enabling a
+   * second provider would write a list built before the first was saved,
+   * silently switching it back off and discarding the key that had just been
+   * entered.
+   */
+  const write = (fn: (current: ProviderEntry[]) => ProviderEntry[]) => {
     setUserData((prev) => ({
       ...prev,
-      subtitleTranslation: { ...prev.subtitleTranslation, providers: next },
+      subtitleTranslation: {
+        ...prev.subtitleTranslation,
+        providers: fn(
+          mergeWithAll(prev.subtitleTranslation?.providers as ProviderEntry[])
+        ),
+      },
     }));
   };
 
   const update = (id: TranslationProviderId, patch: Partial<ProviderEntry>) => {
-    write(providers.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+    write((current) =>
+      current.map((p) => (p.id === id ? { ...p, ...patch } : p))
+    );
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    const from = providers.findIndex((p) => p.id === active.id);
-    const to = providers.findIndex((p) => p.id === over.id);
-    if (from < 0 || to < 0) return;
-    write(arrayMove(providers, from, to));
+    write((current) => {
+      const from = current.findIndex((p) => p.id === active.id);
+      const to = current.findIndex((p) => p.id === over.id);
+      return from < 0 || to < 0 ? current : arrayMove(current, from, to);
+    });
   };
 
   const active = providers.filter((p) => p.enabled && p.apiKey?.trim());

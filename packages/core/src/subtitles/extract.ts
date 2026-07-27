@@ -13,6 +13,7 @@
 import { spawn } from 'node:child_process';
 import { createLogger } from '../logging/logger.js';
 import { appConfig, normaliseLanguage } from '../utils/index.js';
+import { settingsStore } from '../config/index.js';
 import {
   BitmapOnlySubtitleError,
   type ProbedSubtitleTrack,
@@ -259,7 +260,7 @@ export function pickTrack(
 export async function extractTrackToSrt(
   url: string,
   track: ProbedSubtitleTrack,
-  timeoutMs = 5 * 60_000
+  timeoutMs = extractionTimeoutMs()
 ): Promise<string> {
   if (!track.isText) {
     throw new BitmapOnlySubtitleError([track.codec]);
@@ -294,6 +295,15 @@ export async function extractTrackToSrt(
  * Convenience: probe, pick the best text track for `preferredLangs`, extract.
  * Throws {@link BitmapOnlySubtitleError} if only bitmap tracks exist.
  */
+/**
+ * Operator-configured ceiling for one extraction. Read lazily so the module
+ * still imports before `initialiseConfig()` (tests, CLI paths).
+ */
+function extractionTimeoutMs(): number {
+  if (!settingsStore.initialised) return 30 * 60_000;
+  return Math.max(appConfig.subtitles.extractionTimeoutSeconds, 30) * 1000;
+}
+
 export async function extractBestSubtitle(
   url: string,
   preferredLangs: string[],

@@ -31,6 +31,16 @@ export const subtitlesSchema = {
     requiresRestart: false,
     secret: false,
   },
+  extractionTimeoutSeconds: {
+    schema: nonNegativeInt,
+    default: 1800,
+    label: 'Extraction timeout (seconds)',
+    description:
+      'How long ffmpeg may spend demuxing one release before the job is failed. Extraction streams the file over the network, so a large remux on a slow backbone legitimately takes far longer than a local copy would — the old 5-minute ceiling failed 20 GB files that were progressing normally. Raise it if you see "ffmpeg timed out" on big releases.',
+    env: 'SUBTITLE_EXTRACTION_TIMEOUT_SECONDS',
+    requiresRestart: false,
+    secret: false,
+  },
   extractionAllowed: {
     schema: z.boolean(),
     default: true,
@@ -38,6 +48,16 @@ export const subtitlesSchema = {
     description:
       'Allow the full-file extraction path, which streams the release to demux its embedded subtitle track. On a public multi-tenant instance you may want this off, leaving only features that need no download. Users must supply their own translation API key either way.',
     env: 'SUBTITLE_EXTRACTION_ALLOWED',
+    requiresRestart: false,
+    secret: false,
+  },
+  shareTranslations: {
+    schema: z.boolean(),
+    default: true,
+    label: 'Share translations between users',
+    description:
+      "Let any user be served a finished translation another user already paid for, when it is for the same release and the same target language. Translation is by far the expensive step, so re-running it per user wastes both time and API quota for an identical result. Turn off to keep each user's translations private to them.",
+    env: 'SUBTITLE_SHARE_TRANSLATIONS',
     requiresRestart: false,
     secret: false,
   },

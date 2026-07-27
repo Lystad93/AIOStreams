@@ -1113,6 +1113,7 @@ const ENCODES = [
 ] as const;
 
 const SORT_CRITERIA = [
+  'subtitleTranslated',
   'quality',
   'resolution',
   'language',
@@ -1304,6 +1305,15 @@ export const SORT_CRITERIA_DETAILS: Record<
     description: 'Whether the stream is cached or not',
     ascendingDescription: 'Streams that are not cached are preferred',
     descendingDescription: 'Streams that are cached are preferred',
+  },
+  subtitleTranslated: {
+    name: 'AI Translated Subtitle',
+    defaultDirection: 'desc',
+    description:
+      'Whether an AI-translated subtitle already exists for the stream in your target language',
+    ascendingDescription: 'Streams without a translated subtitle are preferred',
+    descendingDescription:
+      'Streams that already have a translated subtitle are preferred',
   },
   library: {
     name: 'Library',

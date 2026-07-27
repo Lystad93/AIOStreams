@@ -157,6 +157,8 @@ class StreamSorter {
 
         case 'library':
           return multiplier * (stream.library ? 1 : 0);
+        case 'subtitleTranslated':
+          return multiplier * (stream.subtitleTranslated ? 1 : 0);
         case 'size':
           return multiplier * (stream.size ?? 0);
         case 'bitrate':

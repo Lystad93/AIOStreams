@@ -354,6 +354,11 @@ export async function processStreams(
     precomputeMs = Date.now() - precomputeStart;
   }
 
+  // Before the sort, not after: the `subtitleTranslated` sort criterion reads
+  // this flag, and it must run after deduplication so the merged `duration` is
+  // available for the runtime-based match.
+  await markTranslatedForSubtitles(ctx, id, processedStreams);
+
   const sortStart = Date.now();
   let finalStreams = await ctx.sorter.sort(processedStreams, context);
   sortMs = Date.now() - sortStart;
@@ -1086,7 +1091,6 @@ export async function getStreams(
   // file the user plays back to its owned playback URL for extraction (spec
   // §3.3/§4.2). Non-blocking; failures here must not affect the stream reply.
   recordReleasesForSubtitles(ctx, id, finalStreams);
-  await markTranslatedForSubtitles(ctx, id, finalStreams);
 
   const response: StreamsResponse = {
     success: true,

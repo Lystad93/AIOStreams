@@ -215,7 +215,8 @@ test('findTranslatedByFilenames: matches the same release across addons, scoped 
   );
   assert.equal(hit.get(FILE), 'addon-a');
 
-  // Must not leak across user, content or target language.
+  // Sharing is the default: another user is served the same finished
+  // translation rather than paying to redo it.
   assert.equal(
     (
       await SubtitleJobRepository.findTranslatedByFilenames(
@@ -223,6 +224,20 @@ test('findTranslatedByFilenames: matches the same release across addons, scoped 
         'tt9:1:8',
         'Norwegian',
         [FILE]
+      )
+    ).get(FILE),
+    'addon-a'
+  );
+
+  // ...but an explicit owner scope still isolates (sharing turned off).
+  assert.equal(
+    (
+      await SubtitleJobRepository.findTranslatedByFilenames(
+        'someone-else',
+        'tt9:1:8',
+        'Norwegian',
+        [FILE],
+        'someone-else'
       )
     ).size,
     0

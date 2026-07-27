@@ -619,7 +619,8 @@ export async function markTranslatedStreams(
     uuid,
     contentId,
     cfg.targetLanguage,
-    [...byFilename.keys()]
+    [...byFilename.keys()],
+    translationScope(uuid)
   );
   const flag = (s: (typeof streams)[number]) => {
     s.subtitleTranslated = true;
@@ -648,7 +649,8 @@ export async function markTranslatedStreams(
         contentId,
         cfg.targetLanguage,
         durationMs,
-        durationToleranceMs(durationMs)
+        durationToleranceMs(durationMs),
+        translationScope(uuid)
       ));
       checked.set(durationMs, hit);
     }
@@ -742,6 +744,17 @@ export async function precacheTranslateExact(
  * back to this request's own job id.
  */
 /**
+ * Owner scope for translation lookups: `undefined` means "any user's finished
+ * translation", mirroring {@link sourceScope} for extracted sources.
+ *
+ * Translation is the expensive half — re-running it per user burns API quota to
+ * produce a byte-identical result for the same release and target language.
+ */
+export function translationScope(uuid: string): string | undefined {
+  return appConfig.subtitles.shareTranslations ? undefined : uuid;
+}
+
+/**
  * How a stored translation was found. Worth surfacing: a subtitle matched on
  * runtime alone was made for a DIFFERENT release, which is exactly the case a
  * user wants to see flagged before trusting the timing.
@@ -784,7 +797,8 @@ async function storedTranslation(
       uuid,
       contentId,
       targetLang,
-      [filename]
+      [filename],
+      translationScope(uuid)
     );
     const id = found.get(filename);
     if (id) return { id, matchedBy: 'filename' };
@@ -802,7 +816,8 @@ async function storedTranslation(
       contentId,
       targetLang,
       durationMs,
-      durationToleranceMs(durationMs)
+      durationToleranceMs(durationMs),
+      translationScope(uuid)
     );
     if (id) return { id, matchedBy: 'duration' };
   }

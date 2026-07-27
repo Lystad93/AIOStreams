@@ -241,12 +241,17 @@ export const SubtitleJobRepository = {
     uuid: string,
     contentId: string,
     targetLang: string,
-    filenames: string[]
+    filenames: string[],
+    /** `undefined` = any user's translation (shared); otherwise this user's. */
+    ownerUuid?: string
   ): Promise<Map<string, string>> {
     if (filenames.length === 0) return new Map();
     const keys = [
       ...new Set(filenames.map((f) => normaliseReleaseName(f))),
     ].filter(Boolean);
+    // `sql\`\`` when shared, so the uuid predicate simply disappears rather
+    // than being widened to a match-anything comparison.
+    const ownerScope = ownerUuid ? sql`uuid = ${ownerUuid} AND` : sql``;
     // Guard the array actually interpolated, not `filenames`: a name that
     // normalises away to nothing (e.g. a bare ".mkv") leaves `keys` empty while
     // `filenames` is not, and `IN ()` is a Postgres syntax error even though
@@ -261,8 +266,8 @@ export const SubtitleJobRepository = {
       match_key: string | null;
     }>(sql`
       SELECT id, filename, match_key FROM subtitle_jobs
-      WHERE uuid = ${uuid}
-        AND content_id = ${contentId}
+      WHERE ${ownerScope}
+        content_id = ${contentId}
         AND target_lang = ${targetLang}
         AND translated_srt IS NOT NULL
         AND LENGTH(translated_srt) > 0
@@ -314,16 +319,19 @@ export const SubtitleJobRepository = {
     contentId: string,
     targetLang: string,
     durationMs: number,
-    toleranceMs: number
+    toleranceMs: number,
+    /** `undefined` = any user's translation (shared); otherwise this user's. */
+    ownerUuid?: string
   ): Promise<string | undefined> {
+    const ownerScope = ownerUuid ? sql`uuid = ${ownerUuid} AND` : sql``;
     if (!durationMs || durationMs <= 0) return undefined;
     const row = await getDb().maybeOne<{
       [k: string]: unknown;
       id: string;
     }>(sql`
       SELECT id FROM subtitle_jobs
-      WHERE uuid = ${uuid}
-        AND content_id = ${contentId}
+      WHERE ${ownerScope}
+        content_id = ${contentId}
         AND target_lang = ${targetLang}
         AND translated_srt IS NOT NULL
         AND LENGTH(translated_srt) > 0
