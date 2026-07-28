@@ -298,10 +298,18 @@ export async function buildSubtitleSlots(
     // different release and the equal runtime is the whole reason it's offered.
     // A name match needs no such caveat.
     slots.push({
-      id:
-        durable.matchedBy === 'duration'
-          ? `${SLOT_ID.finished}-duration`
-          : SLOT_ID.finished,
+      // A rendered detail line, not a bare slot id: this row has to say where
+      // its subtitle came from, or a finished embedded translation is
+      // indistinguishable from a finished external one sitting beside it.
+      id: renderDetail(display.detail, {
+        targetLang: cfg.targetLanguage,
+        score: 100,
+        provider: 'embedded',
+        duration:
+          durable.matchedBy === 'duration' ? 'EQUAL' : ('UNKNOWN_SUB' as const),
+        subDurationMs: served.durationMs,
+        streamDurationMs: served.durationMs,
+      }),
       url: slotUrl('result', token),
       // This row delivers a real subtitle in a known language, so the header
       // follows the Stremio SDK's ISO 639-2 expectation unless the user opted
@@ -785,9 +793,19 @@ export async function buildExternalSlots(
           // A finished translation delivers a real subtitle in the target
           // language, so it takes the standard code; an offer or an in-flight
           // job is not a subtitle yet and keeps its readable header.
-          lang: display.standardCodes
-            ? standardLangCode(translation.targetLanguage)
-            : renderHeader(display.header, translateCtx),
+          // A finished translation is the target language, full stop — it
+          // headers identically to the exact-path finished row so the player
+          // groups them. Rank and source language stay on the detail line;
+          // putting them here splits one language into several entries.
+          lang: done
+            ? display.standardCodes
+              ? standardLangCode(translation.targetLanguage)
+              : renderHeader(display.header, {
+                  targetLang: translation.targetLanguage,
+                })
+            : display.standardCodes
+              ? standardLangCode(translation.targetLanguage)
+              : renderHeader(display.header, translateCtx),
         });
       }
     }

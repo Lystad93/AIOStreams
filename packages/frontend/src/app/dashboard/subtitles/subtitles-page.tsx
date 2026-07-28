@@ -1,7 +1,7 @@
 import React from 'react';
 import { toast } from 'sonner';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BiTrash, BiDownload, BiCaptions } from 'react-icons/bi';
+import { BiTrash, BiDownload, BiCaptions, BiInfoCircle } from 'react-icons/bi';
 import { PageWrapper } from '@/components/shared/page-wrapper';
 import { Card } from '@/components/ui/card';
 import { Button, IconButton } from '@/components/ui/button';
@@ -13,11 +13,13 @@ import {
 import { DashboardQueryBoundary } from '@/components/shared/dashboard-query-boundary';
 import { api } from '@/lib/api';
 import { formatBytes, formatDurationMs } from '@/lib/format';
+import { JobInfoModal, sourceLabel } from './job-info-modal';
 
 interface SubtitleJob {
   id: string;
   uuid: string;
   contentId: string;
+  releaseHash?: string;
   sourcePath: string;
   targetLang: string;
   sourceLang?: string;
@@ -73,6 +75,7 @@ export function SubtitlesPage() {
   });
 
   const [pendingId, setPendingId] = React.useState<string | undefined>();
+  const [infoJob, setInfoJob] = React.useState<SubtitleJob | null>(null);
   const del = useMutation({
     mutationFn: (id: string) => api(`DELETE /dashboard/subtitles/${id}`),
     onSuccess: () => {
@@ -168,6 +171,18 @@ export function SubtitlesPage() {
                           >
                             {job.filename ?? '—'}
                           </div>
+                          <div className="mt-1">
+                            <span
+                              className={cn(
+                                'text-[10px] px-1.5 py-0.5 rounded border',
+                                job.sourcePath === 'exact'
+                                  ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                                  : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                              )}
+                            >
+                              {sourceLabel(job)}
+                            </span>
+                          </div>
                           {job.status === 'failed' && job.error && (
                             <div className="text-[11px] text-red-500 mt-1 line-clamp-2">
                               {job.error}
@@ -234,7 +249,14 @@ export function SubtitlesPage() {
                           </div>
                         </td>
                         <td className="p-3">
-                          <div className="flex justify-end">
+                          <div className="flex justify-end gap-1">
+                            <IconButton
+                              size="sm"
+                              intent="gray-subtle"
+                              icon={<BiInfoCircle />}
+                              aria-label="Job details"
+                              onClick={() => setInfoJob(job)}
+                            />
                             <IconButton
                               size="sm"
                               intent="alert-subtle"
@@ -283,6 +305,12 @@ export function SubtitlesPage() {
         The extracted file is the original embedded track; the translated file
         is the machine-translated result served to the player.
       </p>
+
+      <JobInfoModal
+        job={infoJob}
+        open={infoJob !== null}
+        onOpenChange={(v) => !v && setInfoJob(null)}
+      />
 
       <ConfirmationDialog {...confirmDelete} />
     </PageWrapper>
