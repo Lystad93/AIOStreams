@@ -320,7 +320,27 @@ async function finishTranslation(args: {
   mark: (patch: Partial<SubtitleJob>) => Promise<void>;
   startedMs: number;
 }): Promise<void> {
-  const { input, id, job, srt, sourceLang, provider, mark, startedMs } = args;
+  const {
+    input,
+    id,
+    job,
+    srt,
+    sourceLang: rawSourceLang,
+    provider,
+    mark,
+    startedMs,
+  } = args;
+
+  // Canonicalise once, here, where all three source paths converge.
+  //
+  // Extraction reports ffprobe's ISO code (`eng`) while a provider reports its
+  // display name (`English`) — the same track recorded two ways. Only the
+  // translation prompt was normalising, so the dashboard and the DB kept
+  // whichever spelling happened to arrive, and two identical jobs looked like
+  // different languages.
+  const sourceLang = rawSourceLang
+    ? (normaliseLanguage(rawSourceLang) ?? rawSourceLang)
+    : undefined;
 
   const cues = parseSrt(srt);
   if (cues.length === 0) throw new Error('Source subtitle had no cues');
@@ -349,9 +369,7 @@ async function finishTranslation(args: {
     baseUrl: p.baseUrl,
   }));
   const translated = await translateCuesWithFailover(cues, {
-    sourceLang: sourceLang
-      ? (normaliseLanguage(sourceLang) ?? sourceLang)
-      : undefined,
+    sourceLang,
     targetLang: input.targetLanguage,
     providers: chain,
   });
