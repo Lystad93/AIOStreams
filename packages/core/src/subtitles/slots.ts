@@ -302,6 +302,7 @@ export async function buildSubtitleSlots(
       // its subtitle came from, or a finished embedded translation is
       // indistinguishable from a finished external one sitting beside it.
       id: renderDetail(display.detail, {
+        state: 'done',
         targetLang: cfg.targetLanguage,
         score: 100,
         provider: 'embedded',
@@ -346,6 +347,7 @@ export async function buildSubtitleSlots(
       // Detail rides in `id`, which the player renders as the smaller
       // secondary line; `lang` stays the language header.
       id: renderDetail(display.detail, {
+        state: 'running',
         targetLang: cfg.targetLanguage,
         score: 100,
         etaText: fmtEta(
@@ -369,12 +371,13 @@ export async function buildSubtitleSlots(
   slots.push({
     // Extraction comes from the playing file itself, so it bypasses the match
     // matrix and is always 100 (§6).
-    id: `${renderDetail(display.detail, {
+    id: renderDetail(display.detail, {
+      state: job?.status === 'failed' ? 'failed' : 'offer',
       targetLang: cfg.targetLanguage,
       score: 100,
       etaText: eta,
       provider: 'embedded',
-    })}${job?.status === 'failed' ? '(retry)' : ''}`,
+    }),
     url: slotUrl('exact', token),
     lang: display.standardCodes
       ? standardLangCode(cfg.targetLanguage)
@@ -689,6 +692,7 @@ export async function buildExternalSlots(
     const machineSource =
       !!match.candidate.aiTranslated || !!match.candidate.machineTranslated;
     const ctx: RenderContext = {
+      state: 'ready',
       sourceLang: match.candidate.lang,
       rank,
       score: evaluation.score,
@@ -782,8 +786,9 @@ export async function buildExternalSlots(
         const translateEta = fmtEta(estimateEtaSeconds({ reuseSource: true }));
         const translateCtx: RenderContext = {
           ...ctx,
+          state: done ? 'done' : running ? 'running' : 'offer',
           targetLang: translation.targetLanguage,
-          etaText: done ? undefined : running ? 'running' : translateEta,
+          etaText: done || running ? undefined : translateEta,
         };
         slots.push({
           // Distinct from the "use" row's detail by the ETA, so the two rows

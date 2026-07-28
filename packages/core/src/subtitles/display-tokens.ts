@@ -16,6 +16,7 @@ export const HEADER_TOKENS = [
 export const DETAIL_TOKENS = [
   'score',
   'eta',
+  'state',
   'pack',
   'duration',
   'diffs',
@@ -30,6 +31,7 @@ export const DEFAULT_HEADER: HeaderToken[] = ['rank', 'languages'];
 export const DEFAULT_DETAIL: DetailToken[] = [
   'score',
   'eta',
+  'state',
   'pack',
   'duration',
   'diffs',
@@ -53,6 +55,11 @@ export const TOKEN_DETAILS: Record<
     description: 'Target and source, e.g. `NOR<ENG`',
   },
   score: { name: 'Match score', description: 'e.g. `90%`' },
+  state: {
+    name: 'What the row does',
+    description:
+      'Whether clicking translates, a job is running, or the subtitle is ready — e.g. `(Translate Embedded)`, `(…in progress)`, `(Finished translation)`',
+  },
   eta: { name: 'ETA', description: 'Estimated time for a translation job' },
   pack: { name: 'Season pack marker', description: 'e.g. `(S01)`' },
   duration: {

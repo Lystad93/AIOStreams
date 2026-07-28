@@ -304,7 +304,16 @@ export function buildDescription(
  * `lang` is decorated text as "Unknown". Keeping it a token means a user can
  * choose readability or compatibility per line rather than us guessing.
  */
+/**
+ * What the row will do if clicked, or what has already happened to it.
+ *
+ * Without this every row renders identically — the score and source say nothing
+ * about whether a translation exists, is running, or has yet to be started.
+ */
+export type RowState = 'offer' | 'running' | 'done' | 'failed' | 'ready';
+
 export interface RenderContext {
+  state?: RowState;
   targetLang?: string;
   sourceLang?: string;
   rank?: number;
@@ -343,6 +352,25 @@ function renderToken(token: string, ctx: RenderContext): string {
     }
     case 'score':
       return ctx.score != null ? `${Math.round(ctx.score)}%` : '';
+    case 'state': {
+      const embedded = ctx.provider === 'embedded';
+      switch (ctx.state) {
+        case 'offer':
+          // Names the origin here because an embedded translation is the one
+          // that costs a full download — worth stating before the click.
+          return embedded ? '(Translate Embedded)' : '(Translate)';
+        case 'running':
+          return '(…in progress)';
+        case 'done':
+          return '(Finished translation)';
+        case 'failed':
+          return '(Retry translation)';
+        case 'ready':
+          return '(Ready to use)';
+        default:
+          return '';
+      }
+    }
     case 'eta':
       return ctx.etaText ? `(${ctx.etaText})` : '';
     case 'pack':
