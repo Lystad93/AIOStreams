@@ -8,6 +8,7 @@
  */
 import { appConfig, normaliseLanguage } from '../../utils/index.js';
 import { pickFromArchive } from './subsource.js';
+import { parseUploaderComment } from '../comment-parse.js';
 import type {
   ExternalSearchQuery,
   ExternalSubtitleCandidate,
@@ -32,6 +33,10 @@ interface SdSubtitle {
   hi?: boolean;
   full_season?: boolean;
   author?: string | null;
+  /** Uploader notes; key name unverified, so several are accepted. */
+  comment?: string | null;
+  comments?: string | null;
+  description?: string | null;
 }
 
 function apiKey(creds: ProviderCredentials): string | undefined {
@@ -106,11 +111,16 @@ export const subdlClient: SubtitleProviderClient = {
       .map((s): ExternalSubtitleCandidate => {
         const fpsNum = Number(s.fps);
         const rawLang = s.lang || s.language || '';
+        // SubDL renders comments in mathematical bold Unicode, so a stated
+        // runtime arrives as `𝟎𝟏𝐡 𝟒𝟖𝐦 𝟏𝟒𝐬` — the parser folds it first.
+        const mined = parseUploaderComment(
+          s.comment ?? s.comments ?? s.description ?? undefined
+        );
         return {
           provider: 'subdl',
           id: s.url!,
           lang: normaliseLanguage(rawLang) ?? rawLang,
-          releaseNames: [s.release_name, s.name]
+          releaseNames: [s.release_name, s.name, ...mined.releaseNames]
             .filter((v): v is string => !!v)
             .map((v) => v.replace(/^SUBDL::/, '')),
           hearingImpaired: !!s.hi,

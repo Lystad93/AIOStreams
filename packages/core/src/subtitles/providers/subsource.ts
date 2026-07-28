@@ -10,6 +10,7 @@
 import { createLogger } from '../../logging/logger.js';
 import { appConfig, normaliseLanguage } from '../../utils/index.js';
 import { readZipEntries, subtitleEntries } from './zip.js';
+import { parseUploaderComment } from '../comment-parse.js';
 import { matchesEpisode, scoreRelease } from '../match.js';
 import type {
   ExternalSearchQuery,
@@ -33,6 +34,16 @@ interface SsSubtitle {
   subtitleId: number;
   language: string;
   releaseInfo?: string[] | null;
+  /**
+   * Uploader notes. The exact key isn't documented, and different endpoints
+   * have used different names, so every plausible one is accepted — reading a
+   * key that turns out not to exist costs nothing, missing the one that does
+   * loses a stated runtime.
+   */
+  comment?: string | null;
+  comments?: string | null;
+  note?: string | null;
+  description?: string | null;
   hearingImpaired?: boolean;
   foreignParts?: boolean;
   framerate?: string | null;
@@ -122,11 +133,24 @@ export const subsourceClient: SubtitleProviderClient = {
 
     return [...byId.values()].map((s): ExternalSubtitleCandidate => {
       const fps = Number(s.framerate);
+      // Uploaders state the runtime in prose far more often than any provider
+      // exposes it as a field.
+      const mined = parseUploaderComment(
+        s.comment ?? s.comments ?? s.note ?? s.description ?? undefined
+      );
       return {
         provider: 'subsource',
         id: String(s.subtitleId),
         lang: normaliseLanguage(s.language) ?? s.language,
-        releaseNames: (s.releaseInfo ?? []).filter(Boolean),
+        releaseNames: [
+          ...new Set([
+            // SubSource lists every release a subtitle is synced to, which is
+            // the single most useful field any provider gives us.
+            ...(s.releaseInfo ?? []).filter(Boolean),
+            ...mined.releaseNames,
+          ]),
+        ],
+        statedDurationMs: mined.durationMs,
         hearingImpaired: !!s.hearingImpaired,
         foreignPartsOnly: !!s.foreignParts,
         fps: Number.isFinite(fps) && fps > 0 ? fps : undefined,

@@ -96,10 +96,31 @@ export function parseCommentReleases(comment: string): string[] {
   return [...new Set(out)].slice(0, 10);
 }
 
+/**
+ * Fold decorative Unicode to plain ASCII before anything is matched.
+ *
+ * Uploaders style comments with mathematical alphanumerics — SubDL renders
+ * them that way wholesale, so a runtime arrives as `𝟎𝟏𝐡 𝟒𝟖𝐦 𝟏𝟒𝐬`. Those
+ * codepoints are not `\d`, so every pattern here silently found nothing on a
+ * comment that plainly stated the answer. NFKC maps the whole family back to
+ * `01h 48m 14s`.
+ */
+export function foldDecorativeUnicode(text: string): string {
+  return (
+    text
+      .normalize('NFKC')
+      // Fancy dashes and quotes that survive NFKC but break release tokens.
+      .replace(/[\u2010-\u2015\u2212]/g, '-')
+      .replace(/[\u2018\u2019\u201B]/g, "'")
+      .replace(/[\u201C\u201D]/g, '"')
+  );
+}
+
 export function parseUploaderComment(comment?: string): ParsedComment {
   if (!comment?.trim()) return { releaseNames: [] };
+  const folded = foldDecorativeUnicode(comment);
   return {
-    durationMs: parseCommentDuration(comment),
-    releaseNames: parseCommentReleases(comment),
+    durationMs: parseCommentDuration(folded),
+    releaseNames: parseCommentReleases(folded),
   };
 }

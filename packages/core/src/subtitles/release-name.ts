@@ -13,6 +13,7 @@
  */
 import { appConfig } from '../utils/index.js';
 import { settingsStore } from '../config/index.js';
+import { foldDecorativeUnicode } from './comment-parse.js';
 
 const VIDEO_EXTENSIONS =
   /\.(mkv|mp4|avi|m4v|mov|wmv|flv|webm|mpg|mpeg|m2ts|ts|ogm|divx|vob)$/i;
@@ -80,7 +81,11 @@ function safeDecode(value: string): string {
 export function normaliseReleaseName(filename: string | undefined): string {
   if (!filename) return '';
 
-  let name = safeDecode(filename.trim());
+  // Providers sometimes style a release name with mathematical alphanumerics
+  // (`𝗦𝗨𝗣𝗘𝗥𝗚𝗜𝗥𝗟 (𝟮𝟬𝟮𝟲)`). Left alone those never match the plain-ASCII name
+  // the stream list carries — and this function's output is a storage key, so
+  // the mismatch would persist into the duration index too.
+  let name = foldDecorativeUnicode(safeDecode(filename.trim()));
   // Strip the extension before separators are rewritten, so ".mkv" doesn't
   // survive as a " mkv" token.
   name = name.replace(VIDEO_EXTENSIONS, '');

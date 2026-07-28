@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import '../utils/crypto.js';
 import {
+  foldDecorativeUnicode,
   parseCommentDuration,
   parseCommentReleases,
   parseUploaderComment,
@@ -68,6 +69,36 @@ test('parseUploaderComment: a realistic comment yields both signals', () => {
     'Runtime 1:53:28. Synced for Backrooms.2026.1080p.AMZN.WEB-DL.DDP5.1.Atmos.H.264-BYNDR, should also fit the 2160p version.'
   );
   assert.equal(parsed.durationMs, 6_808_000);
+  assert.equal(parsed.releaseNames.length, 1);
+  assert.ok(parsed.releaseNames[0].includes('BYNDR'));
+});
+
+// --------------------------------------------------------- decorative Unicode
+
+test('folds mathematical-bold Unicode before matching', () => {
+  // SubDL renders whole comments this way. Left unfolded, `\d` matches none of
+  // it and a comment plainly stating the runtime parses to nothing.
+  const styled =
+    '\u{1D403}\u{1D42E}\u{1D42B}\u{1D41A}\u{1D42D}\u{1D422}\u{1D428}\u{1D427} : ' +
+    '\u{1D7CE}\u{1D7CF}\u{1D421} \u{1D7D2}\u{1D7D6}\u{1D426} \u{1D7CF}\u{1D7D2}\u{1D42C}';
+  assert.equal(foldDecorativeUnicode(styled), 'Duration : 01h 48m 14s');
+  assert.equal(parseUploaderComment(styled).durationMs, 6_494_000);
+});
+
+test('a styled release name normalises onto the plain-ASCII key', () => {
+  // The name is a storage key, so a styled copy must land in the same slot as
+  // the ordinary spelling the stream list carries.
+  const styled =
+    '\u{1D5E6}\u{1D5E8}\u{1D5E3}\u{1D5D8}\u{1D5E5}\u{1D5DA}\u{1D5DC}\u{1D5E5}\u{1D5DF}';
+  assert.equal(foldDecorativeUnicode(styled), 'SUPERGIRL');
+});
+
+test('real SubSource comment yields the runtime and its source release', () => {
+  const parsed = parseUploaderComment(
+    'Extracted the SDH/HI srt file from Supergirl.2026.720p.AMZN.WEB-DL.DDP5.1.H.264-BYNDR. ' +
+      'Went through balanced some lines. Movie running time 1:48:14.'
+  );
+  assert.equal(parsed.durationMs, 6_494_000);
   assert.equal(parsed.releaseNames.length, 1);
   assert.ok(parsed.releaseNames[0].includes('BYNDR'));
 });
