@@ -895,6 +895,24 @@ export const UserDataSchema = z.object({
       includeForced: z.boolean().optional(),
     })
     .optional(),
+  /**
+   * How each subtitle row is written. Both lines are ordered token lists, so a
+   * user can drop what they don't read and reorder what they do.
+   */
+  subtitleDisplay: z
+    .object({
+      /** The big line the player shows as the track name. */
+      header: z.array(z.string().min(1)).optional(),
+      /** The smaller secondary line (Stremio's subtitle `id`). */
+      detail: z.array(z.string().min(1)).optional(),
+      /**
+       * Force rows that actually deliver a subtitle in a known language to use
+       * a bare ISO 639-2 code as their header, whatever the tokens say.
+       * Players that resolve `lang` strictly show anything else as "Unknown".
+       */
+      standardLanguageCodes: z.boolean().optional(),
+    })
+    .optional(),
   autoPlay: z
     .object({
       enabled: z.boolean().optional(),

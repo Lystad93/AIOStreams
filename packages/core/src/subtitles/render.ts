@@ -13,6 +13,12 @@ import { appConfig } from '../utils/index.js';
 import { settingsStore } from '../config/index.js';
 import { languageToCode } from '../utils/languages.js';
 import type { DurationState, FieldDiff, ScoredCandidate } from './relation.js';
+import {
+  DEFAULT_DETAIL,
+  DEFAULT_HEADER,
+  type HeaderToken,
+} from './display-tokens.js';
+export * from './display-tokens.js';
 
 export type DiffVerbosity = 'minimal' | 'normal' | 'full';
 
@@ -284,4 +290,114 @@ export function buildDescription(
   const source = sourceToken(opts.provider, opts.rank);
   if (source) groups.push(`(${source})`);
   return groups.join('');
+}
+
+// ---------------------------------------------------------------------------
+// Token-driven rendering
+// ---------------------------------------------------------------------------
+
+/**
+ * Pieces a user can switch on and reorder for each of the two lines.
+ *
+ * `langCode` is the Stremio-standard one: the SDK expects `lang` to be an
+ * ISO 639-2 code, and players that resolve it strictly will show a row whose
+ * `lang` is decorated text as "Unknown". Keeping it a token means a user can
+ * choose readability or compatibility per line rather than us guessing.
+ */
+export interface RenderContext {
+  targetLang?: string;
+  sourceLang?: string;
+  rank?: number;
+  score?: number;
+  etaText?: string;
+  provider?: string;
+  machineSource?: boolean;
+  duration?: DurationState;
+  diffs?: FieldDiff[];
+  seasonPack?: boolean;
+  seasonLabel?: string;
+  subDurationMs?: number;
+  streamDurationMs?: number;
+}
+
+/** Lowercase ISO 639-2 — the form the Stremio SDK documents for `lang`. */
+export function standardLangCode(language?: string): string {
+  return langCode3(language).toLowerCase();
+}
+
+function renderToken(token: string, ctx: RenderContext): string {
+  switch (token) {
+    case 'rank':
+      return ctx.rank && ctx.rank > 0 ? `${ctx.rank}#` : '';
+    case 'langCode':
+      return standardLangCode(ctx.targetLang ?? ctx.sourceLang);
+    case 'languages': {
+      if (ctx.targetLang) {
+        const target = langCode3(ctx.targetLang);
+        const source = ctx.sourceLang ? langCode3(ctx.sourceLang) : undefined;
+        return source && source !== target
+          ? `${target}${arrow()}${source}`
+          : target;
+      }
+      return langCode3(ctx.sourceLang);
+    }
+    case 'score':
+      return ctx.score != null ? `${Math.round(ctx.score)}%` : '';
+    case 'eta':
+      return ctx.etaText ? `(${ctx.etaText})` : '';
+    case 'pack':
+      return ctx.seasonPack && ctx.seasonLabel ? `(${ctx.seasonLabel})` : '';
+    case 'duration':
+      return ctx.duration
+        ? durationGroup(ctx.duration, ctx.subDurationMs, ctx.streamDurationMs)
+        : '';
+    case 'diffs':
+      return diffGroups(ctx.diffs ?? []);
+    case 'mt':
+      return ctx.machineSource ? '(MT)' : '';
+    case 'source': {
+      const s = sourceToken(ctx.provider, ctx.rank);
+      return s ? `(${s})` : '';
+    }
+    default:
+      return '';
+  }
+}
+
+/**
+ * The header line. Tokens are space-separated because this is prose-like text
+ * the player renders large; empty tokens vanish rather than leaving gaps.
+ */
+export function renderHeader(
+  tokens: readonly string[] | undefined,
+  ctx: RenderContext
+): string {
+  const parts = (tokens?.length ? tokens : DEFAULT_HEADER)
+    .map((tok) => renderToken(tok, ctx))
+    .filter(Boolean);
+  // Never return an empty header: a row with no `lang` is invalid, and a
+  // player would rather show a language code than nothing.
+  return parts.join(' ') || standardLangCode(ctx.targetLang ?? ctx.sourceLang);
+}
+
+/**
+ * The detail line. Parenthesised groups concatenate with no separator; the
+ * score and ETA are bare, so a space joins only those.
+ */
+export function renderDetail(
+  tokens: readonly string[] | undefined,
+  ctx: RenderContext
+): string {
+  const list = tokens?.length ? tokens : DEFAULT_DETAIL;
+  let out = '';
+  for (const tok of list) {
+    const piece = renderToken(tok, ctx);
+    if (!piece) continue;
+    // A bare token (score) followed by a parenthesised one needs no space;
+    // two bare tokens do.
+    const needsSpace =
+      out.length > 0 && !piece.startsWith('(') && !out.endsWith(' ');
+    out += (needsSpace ? ' ' : '') + piece;
+  }
+  return out;
 }

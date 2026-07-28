@@ -9,6 +9,7 @@ import { PasswordInput } from '../../../ui/password-input/password-input';
 import { SortableList } from '../../../shared/sortable-list';
 import { Alert } from '../../../ui/alert';
 import { TranslationProviders } from './translation-providers';
+import { SubtitleDisplay } from './subtitle-display';
 import {
   AUTO_PLAY_ATTRIBUTES,
   DEFAULT_AUTO_PLAY_ATTRIBUTES,
@@ -185,6 +186,8 @@ export function PlaybackBehavior() {
           />
         </div>
       </SettingsCard>
+
+      <SubtitleDisplay />
 
       <SettingsCard
         title="External Subtitles"

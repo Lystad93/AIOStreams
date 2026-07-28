@@ -35,7 +35,14 @@ import { hasReusableSource } from './sources.js';
 import { encodeSubtitleToken, encodeExternalToken } from './token.js';
 import { normaliseReleaseName } from './release-name.js';
 import { evaluateCandidate, minDisplayScore } from './relation.js';
-import { buildLabel, buildDescription } from './render.js';
+import {
+  buildLabel,
+  buildDescription,
+  renderHeader,
+  renderDetail,
+  standardLangCode,
+  type RenderContext,
+} from './render.js';
 import {
   findExternalSubtitles,
   type ScoredSubtitle,
@@ -163,6 +170,27 @@ export function resolveTrackPreferences(userData: UserData): {
 }
 
 /**
+ * The user's chosen tokens for each line, plus the compatibility override.
+ *
+ * `standardLanguageCodes` applies only to rows that actually deliver a
+ * subtitle in a known language. An offer or a placeholder is not a subtitle
+ * yet, so forcing a bare language code onto it would tell the player something
+ * untrue and lose the only text explaining what the row does.
+ */
+function displayTokens(userData: UserData): {
+  header: string[];
+  detail: string[];
+  standardCodes: boolean;
+} {
+  const d = userData.subtitleDisplay;
+  return {
+    header: d?.header?.length ? d.header : [],
+    detail: d?.detail?.length ? d.detail : [],
+    standardCodes: d?.standardLanguageCodes !== false,
+  };
+}
+
+/**
  * Build the exact-path subtitle slots for a request. Returns `[]` (renders no
  * rows) whenever the feature is off, the release can't be identified, or the
  * full-file path is disabled on this instance (spec §7).
@@ -242,6 +270,7 @@ export async function buildSubtitleSlots(
     uuid,
     { contentId: id, durationMs: served.durationMs }
   );
+  const display = displayTokens(userData);
   const eta = fmtEta(
     estimateEtaSeconds({
       fileSizeBytes: served.size,
@@ -271,9 +300,13 @@ export async function buildSubtitleSlots(
           ? `${SLOT_ID.finished}-duration`
           : SLOT_ID.finished,
       url: slotUrl('result', token),
-      // The player keys the track's language off this string, so the finished
-      // row stays a bare language name; the match evidence rides in `id`.
-      lang: cfg.targetLanguage,
+      // This row delivers a real subtitle in a known language, so the header
+      // follows the Stremio SDK's ISO 639-2 expectation unless the user opted
+      // out — players that resolve `lang` strictly show anything else as
+      // "Unknown". The match evidence rides in `id`.
+      lang: display.standardCodes
+        ? standardLangCode(cfg.targetLanguage)
+        : renderHeader(display.header, { targetLang: cfg.targetLanguage }),
     });
     return slots;
   }
@@ -301,11 +334,16 @@ export async function buildSubtitleSlots(
     slots.push({
       // Detail rides in `id`, which the player renders as the smaller
       // secondary line; `lang` stays the language header.
-      id: `100% (${fmtEta(
-        job.etaSeconds || estimateEtaSeconds({ fileSizeBytes: served.size })
-      )})(…)(Embedded)`,
+      id: renderDetail(display.detail, {
+        targetLang: cfg.targetLanguage,
+        score: 100,
+        etaText: fmtEta(
+          job.etaSeconds || estimateEtaSeconds({ fileSizeBytes: served.size })
+        ),
+        provider: 'embedded',
+      }),
       url: slotUrl('result', token),
-      lang: buildLabel({ targetLang: cfg.targetLanguage }),
+      lang: renderHeader(display.header, { targetLang: cfg.targetLanguage }),
     });
     return slots;
   }
@@ -315,9 +353,14 @@ export async function buildSubtitleSlots(
   slots.push({
     // Extraction comes from the playing file itself, so it bypasses the match
     // matrix and is always 100 (§6).
-    id: `100% (${eta})${job?.status === 'failed' ? '(retry)' : ''}(Embedded)`,
+    id: `${renderDetail(display.detail, {
+      targetLang: cfg.targetLanguage,
+      score: 100,
+      etaText: eta,
+      provider: 'embedded',
+    })}${job?.status === 'failed' ? '(retry)' : ''}`,
     url: slotUrl('exact', token),
-    lang: buildLabel({ targetLang: cfg.targetLanguage }),
+    lang: renderHeader(display.header, { targetLang: cfg.targetLanguage }),
   });
   return slots;
 }
@@ -476,6 +519,7 @@ export async function buildExternalSlots(
   const translation = resolveSubtitleConfig(userData);
   const encryptedPassword = userData.encryptedPassword;
 
+  const display = displayTokens(userData);
   const useLimit = appConfig.subtitles.externalUseLimit;
   const translateLimit = appConfig.subtitles.externalTranslateLimit;
   // Ready-made target-language subtitles get their own budget: they cost
@@ -556,15 +600,20 @@ export async function buildExternalSlots(
 
     const machineSource =
       !!match.candidate.aiTranslated || !!match.candidate.machineTranslated;
-    const description = buildDescription(
-      { ...evaluation, score: evaluation.score },
-      {
-        provider: match.candidate.provider,
-        streamDurationMs: ourDurationMs,
-        rank,
-        machineSource,
-      }
-    );
+    const ctx: RenderContext = {
+      sourceLang: match.candidate.lang,
+      rank,
+      score: evaluation.score,
+      provider: match.candidate.provider,
+      machineSource,
+      duration: evaluation.duration,
+      diffs: evaluation.diffs,
+      seasonPack: evaluation.seasonPack,
+      seasonLabel: evaluation.seasonLabel,
+      subDurationMs: evaluation.subDurationMs,
+      streamDurationMs: ourDurationMs,
+    };
+    const description = renderDetail(display.detail, ctx);
 
     // 1. Use it as-is — plays immediately, costs nothing.
     const isTargetLanguage =
@@ -579,11 +628,13 @@ export async function buildExternalSlots(
       if (isTargetLanguage) targetDirectCount++;
       else usedCount++;
       slots.push({
-        // `lang` is the big header — rank and languages only. Everything
-        // quantitative moves to `id`, which the player renders smaller.
+        // `lang` is the big header; everything quantitative moves to `id`,
+        // which the player renders smaller.
         id: description,
         url: slotUrl('external', token),
-        lang: buildLabel({ sourceLang: match.candidate.lang, rank }),
+        lang: display.standardCodes
+          ? standardLangCode(match.candidate.lang)
+          : renderHeader(display.header, ctx),
       });
     }
 
@@ -632,40 +683,23 @@ export async function buildExternalSlots(
           !isStaleJob(existing, Date.now());
 
         const translateEta = fmtEta(estimateEtaSeconds({ reuseSource: true }));
+        const translateCtx: RenderContext = {
+          ...ctx,
+          targetLang: translation.targetLanguage,
+          etaText: done ? undefined : running ? 'running' : translateEta,
+        };
         slots.push({
-          // Detail line. Distinct from the "use" row's by the ETA, so the two
-          // rows for one candidate never collide on `id`.
-          id: done
-            ? buildDescription(
-                { ...evaluation, score: evaluation.score },
-                {
-                  provider: match.candidate.provider,
-                  streamDurationMs: ourDurationMs,
-                  rank,
-                  machineSource,
-                }
-              )
-            : buildDescription(
-                { ...evaluation, score: evaluation.score },
-                {
-                  provider: match.candidate.provider,
-                  streamDurationMs: ourDurationMs,
-                  rank,
-                  machineSource,
-                  etaText: running ? 'running' : translateEta,
-                }
-              ),
+          // Distinct from the "use" row's detail by the ETA, so the two rows
+          // for one candidate never collide on `id`.
+          id: renderDetail(display.detail, translateCtx),
           url: slotUrl(done ? 'result' : 'exact', jobToken),
-          // A finished translation keeps the plain target language so the
-          // player treats the track as that language; the other states carry
-          // the ranked `N# NOR<ENG` header.
-          lang: done
-            ? translation.targetLanguage
-            : buildLabel({
-                targetLang: translation.targetLanguage,
-                sourceLang: match.candidate.lang,
-                rank,
-              }),
+          // A finished translation delivers a real subtitle in the target
+          // language, so it takes the standard code; an offer or an in-flight
+          // job is not a subtitle yet and keeps its readable header.
+          lang:
+            done && display.standardCodes
+              ? standardLangCode(translation.targetLanguage)
+              : renderHeader(display.header, translateCtx),
         });
       }
     }

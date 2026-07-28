@@ -221,6 +221,7 @@ export const FIELD_META: Omit<Record<keyof UserData, FieldMeta>, IgnoredKeys> = 
   autoPlay: { label: 'Auto Play', group: 'misc', type: 'scalar', menu: 'miscellaneous', subTab: 'playback' },
   externalSubtitles: { label: 'External Subtitles', group: 'misc', type: 'scalar', menu: 'miscellaneous', subTab: 'playback', keywords: ['subtitle', 'external', 'subsource', 'subdl', 'match'] },
   subtitleTranslation: { label: 'Subtitle Translation', group: 'misc', type: 'scalar', menu: 'miscellaneous', subTab: 'playback', keywords: ['subtitle', 'translate', 'translation', 'gemini', 'ai'] },
+  subtitleDisplay: { label: 'Subtitle List Display', group: 'misc', type: 'scalar', menu: 'miscellaneous', subTab: 'playback', keywords: ['subtitle', 'display', 'header', 'label', 'format'] },
   areYouStillThere: { label: 'Are You Still There?', group: 'misc', type: 'scalar', menu: 'miscellaneous', subTab: 'playback' },
   statistics: { label: 'Statistics', group: 'misc', type: 'scalar', menu: 'miscellaneous', subTab: 'display' },
   hideErrors: { label: 'Hide Errors', group: 'misc', type: 'scalar', menu: 'miscellaneous', subTab: 'display' },
