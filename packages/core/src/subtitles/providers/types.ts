@@ -43,6 +43,21 @@ export interface ExternalSubtitleCandidate {
   downloadRef: string;
   /** The provider matched this against the video's own hash: exact file. */
   moviehashMatched?: boolean;
+  /**
+   * Runtime the uploader stated in free text. Kept separate from any measured
+   * duration: it is a claim, not an observation.
+   */
+  statedDurationMs?: number;
+  /**
+   * Already machine output. Translating it again compounds the errors, so it
+   * is surfaced rather than silently fed to the LLM.
+   */
+  aiTranslated?: boolean;
+  machineTranslated?: boolean;
+  fromTrusted?: boolean;
+  votes?: number;
+  /** Structured identity from the provider, when it offers one. */
+  imdbId?: string;
 }
 
 /**

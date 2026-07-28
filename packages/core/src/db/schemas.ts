@@ -837,6 +837,14 @@ export const UserDataSchema = z.object({
       // `precacheNextEpisode` (top-level) are enabled — it does a speculative
       // full-file extract, so it's opt-in.
       precacheNextEpisode: z.boolean().optional(),
+      /**
+       * Offer subtitles that are ALREADY in the target language, found on the
+       * external providers. Nothing has to be translated, so these are both
+       * free and instant — worth surfacing before any translation row.
+       */
+      showTargetLanguageSubs: z.boolean().optional(),
+      /** How many such ready-made rows to list. */
+      targetLanguageSubLimit: z.number().min(0).max(20).optional(),
     })
     .optional(),
   // Matching subtitles from external providers (spec §4.5). Deliberately

@@ -125,14 +125,20 @@ test('§8B: cosmetic-only difference with no durations scores 95', () => {
   });
   assert.equal(r.relation, 'COSMETIC');
   assert.equal(r.score, 95);
-  assert.equal(buildDescription(r, { provider: 'subdl' }), '(?)(≠enc)(SubDL)');
+  assert.equal(
+    buildDescription(r, { provider: 'subdl' }),
+    '95%(?)(≠enc)(SubDL)'
+  );
 });
 
 test('§8C: exact match with no duration scores 100 and shows no diffs', () => {
   const r = evaluateCandidate({ subFilename: STREAM, streamFilename: STREAM });
   assert.equal(r.relation, 'IDENTICAL');
   assert.equal(r.score, 100);
-  assert.equal(buildDescription(r, { provider: 'subsource' }), '(?)(SubSrc)');
+  assert.equal(
+    buildDescription(r, { provider: 'subsource' }),
+    '100%(?)(SubSource)'
+  );
 });
 
 test('§8E: exact filename with contradictory durations stays at 90', () => {
@@ -146,7 +152,7 @@ test('§8E: exact filename with contradictory durations stays at 90', () => {
   assert.equal(r.score, 90);
   assert.equal(
     buildDescription(r, { provider: 'opensubtitles' }),
-    '(X 1h53m28s)(OpenS)'
+    '90%(X 1h53m28s)(OpenSub)'
   );
 });
 
@@ -161,7 +167,10 @@ test('§8F: unresolved season pack of the identical release scores 90', () => {
   assert.equal(r.duration, 'UNKNOWN_SUB');
   // ...and the flat penalty applies on top of its own field score.
   assert.equal(r.score, 90);
-  assert.equal(buildDescription(r, { provider: 'subdl' }), '(S01)(?)(SubDL)');
+  assert.equal(
+    buildDescription(r, { provider: 'subdl' }),
+    '90%(S01)(?)(SubDL)'
+  );
 });
 
 test('a subtitle with no filename is UNRELATED; only duration lifts it', () => {
@@ -179,17 +188,60 @@ test('a subtitle with no filename is UNRELATED; only duration lifts it', () => {
 
 // -------------------------------------------------------------------- §7 render
 
-test('label grammar: the published example set', () => {
+test('label grammar: rank prefix and languages only', () => {
+  // Everything quantitative moved to the detail line; the header is what the
+  // player renders largest, and at that size only the languages read well.
   assert.equal(
-    buildLabel({ targetLang: 'Norwegian', score: 100, etaText: '~8m' }),
-    'TR: NOR 100% (~8m)'
+    buildLabel({ targetLang: 'Norwegian', sourceLang: 'English', rank: 1 }),
+    '1# NOR<ENG'
   );
   assert.equal(
-    buildLabel({ targetLang: 'Norwegian', sourceLang: 'English', score: 60 }),
-    'TR: NOR<ENG 60%'
+    buildLabel({ targetLang: 'Norwegian', sourceLang: 'Swedish', rank: 3 }),
+    '3# NOR<SWE'
   );
-  assert.equal(buildLabel({ sourceLang: 'English', score: 60 }), 'ENG 60%');
-  assert.equal(buildLabel({ sourceLang: 'Swedish', score: 60 }), 'SWE 60%');
+  assert.equal(buildLabel({ sourceLang: 'English', rank: 2 }), '2# ENG');
+  // A lone candidate carries no number.
+  assert.equal(buildLabel({ sourceLang: 'English' }), 'ENG');
+  assert.equal(buildLabel({ sourceLang: 'English', rank: 0 }), 'ENG');
+  // Same language both sides collapses to one code.
+  assert.equal(
+    buildLabel({ targetLang: 'Norwegian', sourceLang: 'Norwegian', rank: 1 }),
+    '1# NOR'
+  );
+});
+
+test('description carries the score, ETA and rank-suffixed source', () => {
+  const r = evaluateCandidate({ subFilename: STREAM, streamFilename: STREAM });
+  assert.equal(
+    buildDescription(
+      { ...r, score: r.score },
+      { provider: 'subdl', rank: 2, etaText: '~2m' }
+    ),
+    '100% (~2m)(?)(SubDL-2)'
+  );
+  // Providers keep their own casing.
+  assert.equal(
+    buildDescription(
+      { ...r, score: r.score },
+      { provider: 'opensubtitles', rank: 1 }
+    ),
+    '100%(?)(OpenSub-1)'
+  );
+  assert.equal(
+    buildDescription(
+      { ...r, score: r.score },
+      { provider: 'subsource', rank: 3 }
+    ),
+    '100%(?)(SubSource-3)'
+  );
+  // Machine-translated sources are flagged before being translated again.
+  assert.match(
+    buildDescription(
+      { ...r, score: r.score },
+      { provider: 'subdl', rank: 1, machineSource: true }
+    ),
+    /\(MT\)/
+  );
 });
 
 test('language codes are ISO 639-2/B, not the terminology set', () => {

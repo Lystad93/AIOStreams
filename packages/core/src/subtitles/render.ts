@@ -99,31 +99,31 @@ export interface LabelParts {
   targetLang?: string;
   /** The subtitle's own language. Omitted when it equals the target. */
   sourceLang?: string;
-  score: number;
-  /** Rendered only for translation jobs. */
-  etaText?: string;
+  /**
+   * Position in the ranked candidate list, shared between the "use" and
+   * "translate" rows for one candidate so the two lists line up. Omitted when
+   * there is only one candidate — a lone `1#` is noise.
+   */
+  rank?: number;
 }
 
 /**
- * The language header Stremio shows.
+ * The language header Stremio shows: rank and languages only.
  *
- * The word "match" is dropped everywhere so direct-use rows align with `TR:`
- * rows in the list.
+ * Everything quantitative (score, ETA, differences, source) lives in the detail
+ * line instead — the header is what the player renders largest, and at that
+ * size the languages are the only part worth reading at a glance.
  */
 export function buildLabel(parts: LabelParts): string {
-  const score = `${Math.round(parts.score)}%`;
-  let head: string;
+  const prefix = parts.rank && parts.rank > 0 ? `${parts.rank}# ` : '';
   if (parts.targetLang) {
     const target = langCode3(parts.targetLang);
     const source = parts.sourceLang ? langCode3(parts.sourceLang) : undefined;
-    head =
-      source && source !== target
-        ? `TR: ${target}${arrow()}${source}`
-        : `TR: ${target}`;
-  } else {
-    head = langCode3(parts.sourceLang);
+    return source && source !== target
+      ? `${prefix}${target}${arrow()}${source}`
+      : `${prefix}${target}`;
   }
-  return `${head} ${score}${parts.etaText ? ` (${parts.etaText})` : ''}`;
+  return `${prefix}${langCode3(parts.sourceLang)}`;
 }
 
 /**
@@ -165,15 +165,23 @@ function diffValue(d: FieldDiff): string {
 /** Provider → the short token used in the source group. */
 const SOURCE_TOKENS: Record<string, string> = {
   subdl: 'SubDL',
-  subsource: 'SubSrc',
-  opensubtitles: 'OpenS',
-  podnapisi: 'Podn',
+  subsource: 'SubSource',
+  opensubtitles: 'OpenSub',
+  podnapisi: 'Podnapisi',
   embedded: 'Embedded',
 };
 
-export function sourceToken(provider?: string): string | undefined {
+/**
+ * Provider name in its own casing, suffixed with the candidate's rank so the
+ * source group and the row's `N#` prefix refer to the same thing.
+ */
+export function sourceToken(
+  provider?: string,
+  rank?: number
+): string | undefined {
   if (!provider) return undefined;
-  return SOURCE_TOKENS[provider.toLowerCase()] ?? provider;
+  const name = SOURCE_TOKENS[provider.toLowerCase()] ?? provider;
+  return rank && rank > 0 ? `${name}-${rank}` : name;
 }
 
 function durationGroup(
@@ -240,10 +248,24 @@ export function buildDescription(
   candidate: Pick<
     ScoredCandidate,
     'duration' | 'diffs' | 'seasonPack' | 'seasonLabel' | 'subDurationMs'
-  >,
-  opts: { provider?: string; streamDurationMs?: number } = {}
+  > & { score?: number },
+  opts: {
+    provider?: string;
+    streamDurationMs?: number;
+    rank?: number;
+    etaText?: string;
+    /** Already machine output — worth a warning before translating it again. */
+    machineSource?: boolean;
+  } = {}
 ): string {
   const groups: string[] = [];
+  // Leads the detail line: the score is the single number the user is
+  // choosing on, and the ETA qualifies it for translation rows.
+  if (candidate.score != null) {
+    groups.push(
+      `${Math.round(candidate.score)}%${opts.etaText ? ` (${opts.etaText})` : ''}`
+    );
+  }
   // Leads, because "this is a whole-season file" is the caveat that most
   // changes how everything after it should be read.
   if (candidate.seasonPack && candidate.seasonLabel) {
@@ -258,7 +280,8 @@ export function buildDescription(
   );
   const diffs = diffGroups(candidate.diffs);
   if (diffs) groups.push(diffs);
-  const source = sourceToken(opts.provider);
+  if (opts.machineSource) groups.push('(MT)');
+  const source = sourceToken(opts.provider, opts.rank);
   if (source) groups.push(`(${source})`);
   return groups.join('');
 }

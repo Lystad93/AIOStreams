@@ -299,30 +299,25 @@ export async function buildSubtitleSlots(
   if (job && (job.status === 'pending' || job.status === 'running')) {
     // Always-present "not ready" placeholder with ETA while a job is in flight.
     slots.push({
-      id: SLOT_ID.notReady,
+      // Detail rides in `id`, which the player renders as the smaller
+      // secondary line; `lang` stays the language header.
+      id: `100% (${fmtEta(
+        job.etaSeconds || estimateEtaSeconds({ fileSizeBytes: served.size })
+      )})(…)(Embedded)`,
       url: slotUrl('result', token),
-      lang: `${buildLabel({
-        targetLang: cfg.targetLanguage,
-        score: 100,
-        etaText: fmtEta(
-          job.etaSeconds || estimateEtaSeconds({ fileSizeBytes: served.size })
-        ),
-      })} … not ready`,
+      lang: buildLabel({ targetLang: cfg.targetLanguage }),
     });
     return slots;
   }
 
   // 3. No stored result and nothing running → offer (or re-offer, after a
   // failure) the trigger. Clicking it starts the background job (spec §5).
-  const exactLabel = buildLabel({
-    targetLang: cfg.targetLanguage,
-    score: 100,
-    etaText: eta,
-  });
   slots.push({
-    id: job?.status === 'failed' ? SLOT_ID.failed : SLOT_ID.trigger,
+    // Extraction comes from the playing file itself, so it bypasses the match
+    // matrix and is always 100 (§6).
+    id: `100% (${eta})${job?.status === 'failed' ? '(retry)' : ''}(Embedded)`,
     url: slotUrl('exact', token),
-    lang: `${job?.status === 'failed' ? 'Retry ' : ''}${exactLabel} (Embedded)`,
+    lang: buildLabel({ targetLang: cfg.targetLanguage }),
   });
   return slots;
 }
@@ -345,7 +340,7 @@ export function resolveExternalConfig(userData: UserData): {
   const enabled = ext?.enabled ?? translation?.enabled ?? false;
   if (!enabled) return null;
 
-  const languages =
+  let languages =
     ext?.languages && ext.languages.length > 0
       ? ext.languages
       : [
@@ -356,6 +351,16 @@ export function resolveExternalConfig(userData: UserData): {
             ].filter((l): l is string => !!l)
           ),
         ];
+  // Ready-made target-language subtitles need the target language to be in the
+  // query in the first place — a user whose source list is "English, Swedish"
+  // would otherwise never be offered the Norwegian that already exists.
+  if (
+    translation?.showTargetLanguageSubs !== false &&
+    translation?.targetLanguage &&
+    !languages.includes(translation.targetLanguage)
+  ) {
+    languages = [translation.targetLanguage, ...languages];
+  }
   if (languages.length === 0) return null;
 
   // Unset means on, so a provider added in a later version doesn't stay
@@ -473,8 +478,17 @@ export async function buildExternalSlots(
 
   const useLimit = appConfig.subtitles.externalUseLimit;
   const translateLimit = appConfig.subtitles.externalTranslateLimit;
+  // Ready-made target-language subtitles get their own budget: they cost
+  // nothing and need no waiting, so they shouldn't compete for slots with the
+  // source-language rows that exist only to be translated.
+  const targetCfg = userData.subtitleTranslation;
+  const targetDirectEnabled = targetCfg?.showTargetLanguageSubs !== false;
+  const targetDirectLimit = targetDirectEnabled
+    ? (targetCfg?.targetLanguageSubLimit ?? 3)
+    : 0;
   let usedCount = 0;
   let translateCount = 0;
+  let targetDirectCount = 0;
 
   // Re-score every candidate against the playing release using the match spec
   // (§4–§6): parsed-field tiers rather than token overlap, with the duration
@@ -491,7 +505,12 @@ export async function buildExternalSlots(
         const evaluation = evaluateCandidate({
           subFilename: name,
           streamFilename: filename,
-          subDurationMs: key ? durationIndex[key] : undefined,
+          // Resolution order (§3): the cached runtime for this release name
+          // first, then whatever the uploader stated in their comment. The
+          // cache is an observation; the comment is a claim, so it ranks lower.
+          subDurationMs:
+            (key ? durationIndex[key] : undefined) ??
+            match.candidate.statedDurationMs,
           streamDurationMs: ourDurationMs,
         });
         if (!best || evaluation.score > best.score) best = evaluation;
@@ -505,9 +524,23 @@ export async function buildExternalSlots(
     )
     .sort((a, b) => b.evaluation.score - a.evaluation.score);
 
+  // One rank per candidate, shared by its "use" and "translate" rows so the
+  // two lists line up: `2#` in one is the same subtitle as `2#` in the other.
+  // Suppressed entirely when there is only one candidate — a lone `1#` is noise.
+  const ranked = evaluated.map((e, index) => ({
+    ...e,
+    rank: evaluated.length > 1 ? index + 1 : 0,
+  }));
+
   const slots: Subtitle[] = [];
-  for (const { match, i, evaluation } of evaluated) {
-    if (usedCount >= useLimit && translateCount >= translateLimit) break;
+  for (const { match, i, evaluation, rank } of ranked) {
+    if (
+      usedCount >= useLimit &&
+      translateCount >= translateLimit &&
+      targetDirectCount >= targetDirectLimit
+    ) {
+      break;
+    }
     const token = encodeExternalToken({
       provider: match.candidate.provider,
       ref: match.candidate.downloadRef,
@@ -521,35 +554,44 @@ export async function buildExternalSlots(
     });
     if (!token) continue;
 
-    const description = buildDescription(evaluation, {
-      provider: match.candidate.provider,
-      streamDurationMs: ourDurationMs,
-    });
+    const machineSource =
+      !!match.candidate.aiTranslated || !!match.candidate.machineTranslated;
+    const description = buildDescription(
+      { ...evaluation, score: evaluation.score },
+      {
+        provider: match.candidate.provider,
+        streamDurationMs: ourDurationMs,
+        rank,
+        machineSource,
+      }
+    );
 
     // 1. Use it as-is — plays immediately, costs nothing.
-    if (usedCount < useLimit) {
-      usedCount++;
-      const label = buildLabel({
-        sourceLang: match.candidate.lang,
-        score: evaluation.score,
-      });
+    const isTargetLanguage =
+      !!translation &&
+      (normaliseLanguage(match.candidate.lang) ?? match.candidate.lang) ===
+        (normaliseLanguage(translation.targetLanguage) ??
+          translation.targetLanguage);
+    const budgetOk = isTargetLanguage
+      ? targetDirectCount < targetDirectLimit
+      : usedCount < useLimit;
+    if (budgetOk) {
+      if (isTargetLanguage) targetDirectCount++;
+      else usedCount++;
       slots.push({
-        id: `aiostreams-external-use-${match.candidate.provider}-${i}`,
+        // `lang` is the big header — rank and languages only. Everything
+        // quantitative moves to `id`, which the player renders smaller.
+        id: description,
         url: slotUrl('external', token),
-        lang: `${label} ${description}`,
+        lang: buildLabel({ sourceLang: match.candidate.lang, rank }),
       });
     }
 
     // 2. Translate it — same match, but run through the LLM into the target
     // language. Needs no video download, so it's far cheaper than extraction.
-    const sameLanguage =
-      translation &&
-      (normaliseLanguage(match.candidate.lang) ?? match.candidate.lang) ===
-        (normaliseLanguage(translation.targetLanguage) ??
-          translation.targetLanguage);
     if (
       translation &&
-      !sameLanguage &&
+      !isTargetLanguage &&
       encryptedPassword &&
       translateCount < translateLimit
     ) {
@@ -589,26 +631,41 @@ export async function buildExternalSlots(
           (existing.status === 'pending' || existing.status === 'running') &&
           !isStaleJob(existing, Date.now());
 
+        const translateEta = fmtEta(estimateEtaSeconds({ reuseSource: true }));
         slots.push({
-          id: `aiostreams-external-translate-${match.candidate.provider}-${i}`,
+          // Detail line. Distinct from the "use" row's by the ETA, so the two
+          // rows for one candidate never collide on `id`.
+          id: done
+            ? buildDescription(
+                { ...evaluation, score: evaluation.score },
+                {
+                  provider: match.candidate.provider,
+                  streamDurationMs: ourDurationMs,
+                  rank,
+                  machineSource,
+                }
+              )
+            : buildDescription(
+                { ...evaluation, score: evaluation.score },
+                {
+                  provider: match.candidate.provider,
+                  streamDurationMs: ourDurationMs,
+                  rank,
+                  machineSource,
+                  etaText: running ? 'running' : translateEta,
+                }
+              ),
           url: slotUrl(done ? 'result' : 'exact', jobToken),
-          // A finished translation keeps the plain target language in `lang`
-          // so the player treats the track as that language; the in-flight and
-          // offer rows use the spec's `TR: NOR<ENG 60%` grammar.
+          // A finished translation keeps the plain target language so the
+          // player treats the track as that language; the other states carry
+          // the ranked `N# NOR<ENG` header.
           lang: done
             ? translation.targetLanguage
-            : running
-              ? `${buildLabel({
-                  targetLang: translation.targetLanguage,
-                  sourceLang: match.candidate.lang,
-                  score: evaluation.score,
-                })} … not ready`
-              : `${buildLabel({
-                  targetLang: translation.targetLanguage,
-                  sourceLang: match.candidate.lang,
-                  score: evaluation.score,
-                  etaText: fmtEta(estimateEtaSeconds({ reuseSource: true })),
-                })} ${description}`,
+            : buildLabel({
+                targetLang: translation.targetLanguage,
+                sourceLang: match.candidate.lang,
+                rank,
+              }),
         });
       }
     }

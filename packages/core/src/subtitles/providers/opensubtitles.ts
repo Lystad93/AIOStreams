@@ -17,6 +17,7 @@
 import { createLogger } from '../../logging/logger.js';
 import { appConfig, normaliseLanguage, Cache } from '../../utils/index.js';
 import { decodeSubtitle } from './subsource.js';
+import { parseUploaderComment } from '../comment-parse.js';
 import type {
   ExternalSearchQuery,
   ExternalSubtitleCandidate,
@@ -30,9 +31,20 @@ const TIMEOUT_MS = 15_000;
 /** Identifies this integration to OpenSubtitles, as their docs require. */
 const USER_AGENT = 'AIOStreams-Subtitles/1.0';
 
+interface OsFeatureDetails {
+  imdb_id?: number;
+  season_number?: number;
+  episode_number?: number;
+  year?: number;
+}
+
 interface OsAttributes {
   language?: string;
   release?: string;
+  /** Free-text uploader notes: often the runtime and compatible releases. */
+  comments?: string;
+  /** Structured identity, better evidence than parsing a filename. */
+  feature_details?: OsFeatureDetails;
   fps?: number;
   hearing_impaired?: boolean;
   foreign_parts_only?: boolean;
@@ -42,6 +54,8 @@ interface OsAttributes {
   ai_translated?: boolean;
   machine_translated?: boolean;
   moviehash_match?: boolean;
+  votes?: number;
+  upload_date?: string;
   files?: { file_id?: number; file_name?: string }[];
 }
 
@@ -139,21 +153,43 @@ export const opensubtitlesClient: SubtitleProviderClient = {
       .map((d): ExternalSubtitleCandidate => {
         const a = d.attributes!;
         const fileId = a.files![0].file_id!;
+        // Mine the uploader's comment: these entries frequently carry no
+        // scene release name at all, and the runtime plus the list of
+        // compatible releases is often written in free text instead.
+        const mined = parseUploaderComment(a.comments);
         return {
           provider: 'opensubtitles',
           id: String(fileId),
           lang: normaliseLanguage(a.language ?? '') ?? a.language ?? '',
           // Both the release string and the stored filename are worth matching
           // against — the filename is often the more scene-like of the two.
-          releaseNames: [a.release, a.files?.[0]?.file_name].filter(
-            (v): v is string => !!v
-          ),
+          releaseNames: [
+            ...new Set(
+              [
+                a.release,
+                a.files?.[0]?.file_name,
+                ...mined.releaseNames,
+              ].filter((v): v is string => !!v)
+            ),
+          ],
+          // Only ever from the comment: a runtime derived from the subtitle's
+          // own last cue would be systematically short (credits carry no
+          // dialogue) and must never be compared at second-level tolerance.
+          statedDurationMs: mined.durationMs,
           hearingImpaired: !!a.hearing_impaired,
           foreignPartsOnly: !!a.foreign_parts_only,
           fps: a.fps && a.fps > 0 ? a.fps : undefined,
           downloads: a.download_count,
           rating: a.ratings,
           moviehashMatched: !!a.moviehash_match,
+          aiTranslated: !!a.ai_translated,
+          machineTranslated: !!a.machine_translated,
+          fromTrusted: !!a.from_trusted,
+          votes: a.votes,
+          // Structured identity beats parsing a filename that may not exist.
+          imdbId: a.feature_details?.imdb_id
+            ? `tt${String(a.feature_details.imdb_id).padStart(7, '0')}`
+            : undefined,
           // Their entries are per-file, never season packs.
           fullSeason: false,
           season: query.season,

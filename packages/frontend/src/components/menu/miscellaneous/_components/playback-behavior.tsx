@@ -488,6 +488,46 @@ export function PlaybackBehavior() {
           </div>
         )}
         <Switch
+          label="Offer subtitles already in your target language"
+          side="right"
+          disabled={!userData.subtitleTranslation?.enabled}
+          help="When a provider already has a subtitle in your target language, list it directly. Nothing is translated, so these are free and instant — they appear above the translation rows."
+          value={userData.subtitleTranslation?.showTargetLanguageSubs ?? true}
+          onValueChange={(value) => {
+            setUserData((prev) => ({
+              ...prev,
+              subtitleTranslation: {
+                ...prev.subtitleTranslation,
+                showTargetLanguageSubs: value,
+              },
+            }));
+          }}
+        />
+        <NumberInput
+          label="How many to show"
+          min={0}
+          max={20}
+          defaultValue={3}
+          disabled={
+            !userData.subtitleTranslation?.enabled ||
+            userData.subtitleTranslation?.showTargetLanguageSubs === false
+          }
+          help="Counted separately from the external use/translate limits, so ready-made subtitles never compete for those slots."
+          value={userData.subtitleTranslation?.targetLanguageSubLimit ?? 3}
+          onValueChange={(value) => {
+            setUserData((prev) => ({
+              ...prev,
+              subtitleTranslation: {
+                ...prev.subtitleTranslation,
+                targetLanguageSubLimit: Math.max(
+                  0,
+                  Math.min(20, Number(value ?? 3))
+                ),
+              },
+            }));
+          }}
+        />
+        <Switch
           label="Pre-translate next episode"
           side="right"
           disabled={
