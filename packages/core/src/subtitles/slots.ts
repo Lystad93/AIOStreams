@@ -343,7 +343,12 @@ export async function buildSubtitleSlots(
         provider: 'embedded',
       }),
       url: slotUrl('result', token),
-      lang: renderHeader(display.header, { targetLang: cfg.targetLanguage }),
+      // Same header as every other row for this language: the player groups on
+      // an exact string match, so `NOR` here and `nor` elsewhere would split
+      // one language into two entries.
+      lang: display.standardCodes
+        ? standardLangCode(cfg.targetLanguage)
+        : renderHeader(display.header, { targetLang: cfg.targetLanguage }),
     });
     return slots;
   }
@@ -360,7 +365,9 @@ export async function buildSubtitleSlots(
       provider: 'embedded',
     })}${job?.status === 'failed' ? '(retry)' : ''}`,
     url: slotUrl('exact', token),
-    lang: renderHeader(display.header, { targetLang: cfg.targetLanguage }),
+    lang: display.standardCodes
+      ? standardLangCode(cfg.targetLanguage)
+      : renderHeader(display.header, { targetLang: cfg.targetLanguage }),
   });
   return slots;
 }
@@ -534,6 +541,32 @@ export async function buildExternalSlots(
   let translateCount = 0;
   let targetDirectCount = 0;
 
+  // Pool every runtime the providers stated, keyed by the release it was
+  // stated FOR. Uploaders write the runtime in prose far more often than the
+  // stream list carries one, and a figure stated by SubSource for a release is
+  // just as usable when SubDL's entry claims that same release. Cached
+  // stream-list runtimes still win: those are observations, these are claims.
+  const stated: Record<string, number> = {};
+  for (const m of matches) {
+    if (!m.candidate.statedDurationMs) continue;
+    for (const name of m.candidate.releaseNames) {
+      const k = normaliseReleaseName(name);
+      if (k && !stated[k]) stated[k] = m.candidate.statedDurationMs;
+    }
+  }
+  const durationFor = (key: string | undefined): number | undefined =>
+    key ? (durationIndex[key] ?? stated[key]) : undefined;
+
+  // Without a runtime for the release being played, every candidate falls to
+  // the UNKNOWN column no matter how good the evidence on the other side is.
+  const playingDurationMs = ourDurationMs ?? durationFor(ourKey);
+  if (!playingDurationMs) {
+    logger.debug(
+      { filename, contentId, statedKeys: Object.keys(stated).length },
+      'no runtime known for the playing release — every subtitle will score in the UNKNOWN column; enable the "duration" merged metadata field'
+    );
+  }
+
   // Re-score every candidate against the playing release using the match spec
   // (§4–§6): parsed-field tiers rather than token overlap, with the duration
   // cache supplying runtimes for release names we've seen in a stream list.
@@ -552,10 +585,8 @@ export async function buildExternalSlots(
           // Resolution order (§3): the cached runtime for this release name
           // first, then whatever the uploader stated in their comment. The
           // cache is an observation; the comment is a claim, so it ranks lower.
-          subDurationMs:
-            (key ? durationIndex[key] : undefined) ??
-            match.candidate.statedDurationMs,
-          streamDurationMs: ourDurationMs,
+          subDurationMs: durationFor(key) ?? match.candidate.statedDurationMs,
+          streamDurationMs: playingDurationMs,
         });
         if (!best || evaluation.score > best.score) best = evaluation;
       }
@@ -611,7 +642,7 @@ export async function buildExternalSlots(
       seasonPack: evaluation.seasonPack,
       seasonLabel: evaluation.seasonLabel,
       subDurationMs: evaluation.subDurationMs,
-      streamDurationMs: ourDurationMs,
+      streamDurationMs: playingDurationMs,
     };
     const description = renderDetail(display.detail, ctx);
 
@@ -696,10 +727,9 @@ export async function buildExternalSlots(
           // A finished translation delivers a real subtitle in the target
           // language, so it takes the standard code; an offer or an in-flight
           // job is not a subtitle yet and keeps its readable header.
-          lang:
-            done && display.standardCodes
-              ? standardLangCode(translation.targetLanguage)
-              : renderHeader(display.header, translateCtx),
+          lang: display.standardCodes
+            ? standardLangCode(translation.targetLanguage)
+            : renderHeader(display.header, translateCtx),
         });
       }
     }
