@@ -4,6 +4,7 @@
  */
 export * from './types.js';
 export * from './srt.js';
+export * from './fps.js';
 export * from './token.js';
 export * from './match.js';
 export {

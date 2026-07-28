@@ -39,6 +39,7 @@ export {
   subtitleLanguageCode,
   serializeSrt,
   parseSrt,
+  rescaleCues,
   getJob,
   BitmapOnlySubtitleError,
   type SubtitleJob,

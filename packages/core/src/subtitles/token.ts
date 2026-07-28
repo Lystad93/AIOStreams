@@ -41,6 +41,8 @@ export interface SubtitleTokenPayload {
      */
     releaseNames?: string[];
     statedDurationMs?: number;
+    /** Retiming factor, when this candidate was framerate-rescued. */
+    fpsFactor?: number;
   };
 }
 
@@ -58,6 +60,11 @@ export interface ExternalSubtitleTokenPayload {
   season?: number;
   episode?: number;
   lang: string;
+  /**
+   * Retiming factor for a framerate-rescued subtitle. Absent for every
+   * ordinary candidate — a subtitle that matched properly is never rescaled.
+   */
+  fpsFactor?: number;
   /** Per-user provider credentials, when set. */
   creds?: {
     subsource?: string;

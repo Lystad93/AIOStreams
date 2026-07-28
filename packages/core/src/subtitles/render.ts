@@ -314,6 +314,8 @@ export type RowState = 'offer' | 'running' | 'done' | 'failed' | 'ready';
 
 export interface RenderContext {
   state?: RowState;
+  /** `25→23.976` when the subtitle had to be retimed to fit. */
+  fpsConversion?: string;
   targetLang?: string;
   sourceLang?: string;
   rank?: number;
@@ -383,6 +385,10 @@ function renderToken(token: string, ctx: RenderContext): string {
       return diffGroups(ctx.diffs ?? []);
     case 'mt':
       return ctx.machineSource ? '(MT)' : '';
+    case 'fps':
+      // Only ever present on a rescued row, so its absence is meaningful:
+      // no marker means the subtitle fit without being touched.
+      return ctx.fpsConversion ? `(${ctx.fpsConversion})` : '';
     case 'source': {
       const s = sourceToken(ctx.provider, ctx.rank);
       return s ? `(${s})` : '';

@@ -21,6 +21,8 @@ import {
   getFinishedResult,
   estimateEtaSeconds,
   serializeSrt,
+  parseSrt,
+  rescaleCues,
   type SubtitleJob,
   type SubtitleJobKey,
   type SubtitleTokenPayload,
@@ -141,7 +143,16 @@ router.get(
         releaseKey: payload.releaseKey,
         creds: payload.creds,
       });
-      sendSrt(res, downloaded.srt);
+      // A rescued subtitle is retimed here, at the last possible moment, so
+      // the cached provider file stays the untouched original.
+      sendSrt(
+        res,
+        payload.fpsFactor
+          ? serializeSrt(
+              rescaleCues(parseSrt(downloaded.srt), payload.fpsFactor)
+            )
+          : downloaded.srt
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger.warn(`external subtitle fetch failed: ${message}`);
@@ -273,6 +284,7 @@ router.get(
             releaseKey: payload.filename,
             releaseNames: payload.external.releaseNames,
             statedDurationMs: payload.external.statedDurationMs,
+            fpsFactor: payload.external.fpsFactor,
             creds: resolveExternalConfig(userData)?.creds,
           },
           sourceLanguages: cfg.sourceLanguages,

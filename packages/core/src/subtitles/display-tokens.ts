@@ -21,6 +21,7 @@ export const DETAIL_TOKENS = [
   'duration',
   'diffs',
   'mt',
+  'fps',
   'source',
 ] as const;
 
@@ -36,6 +37,7 @@ export const DEFAULT_DETAIL: DetailToken[] = [
   'duration',
   'diffs',
   'mt',
+  'fps',
   'source',
 ];
 

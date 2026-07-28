@@ -15,6 +15,7 @@ import type {
   ProviderCredentials,
 } from './providers/types.js';
 import { parseSrt, serializeSrt } from './srt.js';
+import { rescaleCues } from './fps.js';
 import {
   translateCuesWithFailover,
   getTranslationProvider,
@@ -99,6 +100,8 @@ export interface RunJobInput {
     releaseNames?: string[];
     /** Runtime the uploader stated, if their comment gave one. */
     statedDurationMs?: number;
+    /** Retiming factor, when this candidate was framerate-rescued. */
+    fpsFactor?: number;
   };
   /** Ordered preferred source languages for track selection (§4.4). */
   sourceLanguages: string[];
@@ -236,6 +239,17 @@ async function runExactJob(input: RunJobInput): Promise<void> {
       );
       const downloaded = await downloadExternalSubtitle(input.externalSource);
       srt = downloaded.srt;
+      // Retime before translating, not after: the stored result is then
+      // correct for the release being played, and a later reuse of it needs
+      // no knowledge of where the timing came from.
+      const factor = input.externalSource.fpsFactor;
+      if (factor && factor !== 1) {
+        srt = serializeSrt(rescaleCues(parseSrt(srt), factor));
+        logger.info(
+          { contentId: job.contentId, factor },
+          'retimed an externally-sourced subtitle to the playing framerate'
+        );
+      }
       sourceLang = input.externalSource.lang;
       return await finishTranslation({
         input,

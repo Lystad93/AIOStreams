@@ -38,6 +38,7 @@ import { hasReusableSource, sourceScope } from './sources.js';
 import { encodeSubtitleToken, encodeExternalToken } from './token.js';
 import { normaliseReleaseName } from './release-name.js';
 import { evaluateCandidate, minDisplayScore } from './relation.js';
+import { detectFpsConversion, describeConversion } from './fps.js';
 import {
   buildLabel,
   buildDescription,
@@ -607,6 +608,14 @@ export async function buildExternalSlots(
   //   3. what a provider stated for this exact release
   // The title-level consensus is deliberately absent: applying it to both sides
   // would make every comparison trivially EQUAL.
+  // Needed before the candidate list is finalised: the rescue is gated on the
+  // target language, and on knowing what the playing file's framerate is.
+  const translationCfg = resolveSubtitleConfig(userData);
+  const measuredSource = await SubtitleSourceRepository.findByFilename(
+    filename,
+    sourceScope(uuid)
+  ).catch(() => []);
+  const measuredFps = measuredSource.find((s) => s.fps && s.fps > 0)?.fps;
   const measured = await SubtitleSourceRepository.measuredDuration(
     filename,
     sourceScope(uuid)
@@ -630,7 +639,7 @@ export async function buildExternalSlots(
   // Re-score every candidate against the playing release using the match spec
   // (§4–§6): parsed-field tiers rather than token overlap, with the duration
   // cache supplying runtimes for release names we've seen in a stream list.
-  const evaluated = matches
+  const scoreAll = matches
     .map((match, i) => {
       // A candidate may claim several release names; take its best.
       const names = match.candidate.releaseNames.length
@@ -650,14 +659,83 @@ export async function buildExternalSlots(
         });
         if (!best || evaluation.score > best.score) best = evaluation;
       }
-      return { match, i, evaluation: best! };
+      return { match, i, evaluation: best!, conversion: undefined } as {
+        match: (typeof matches)[number];
+        i: number;
+        evaluation: ReturnType<typeof evaluateCandidate>;
+        conversion?: ReturnType<typeof detectFpsConversion>;
+      };
     })
-    // An identity contradiction is a reject, not a low score, and anything
-    // under the floor is computed but never rendered (§4, §6).
-    .filter(
-      (e) => !e.evaluation.rejected && e.evaluation.score >= minDisplayScore()
-    )
     .sort((a, b) => b.evaluation.score - a.evaluation.score);
+
+  // An identity contradiction is a reject, not a low score, and anything under
+  // the floor is computed but never rendered (§4, §6).
+  const accepted = scoreAll.filter(
+    (e) => !e.evaluation.rejected && e.evaluation.score >= minDisplayScore()
+  );
+
+  /**
+   * Framerate rescue — the last thing tried, and only when nothing better
+   * exists.
+   *
+   * A subtitle authored at a different framerate scores badly by every other
+   * measure: its runtime disagrees, so duration matching rejects it, and its
+   * release name usually differs too. But that mismatch is *systematic* and
+   * exactly correctable, so rather than discard it we retime it.
+   *
+   * Three deliberate limits, in the order they apply:
+   *   1. Target language only. A rescued subtitle is a compromise; it is worth
+   *      making for the language the user actually reads, not for a source
+   *      track that only exists to be translated.
+   *   2. Only when no ordinary candidate already covers that language — a
+   *      genuine match is always better evidence than an inferred conversion.
+   *   3. Only conversions this instance recognises as real (see `fps.ts`).
+   */
+  const targetLang = translationCfg?.targetLanguage;
+  const haveTargetAlready =
+    !!targetLang &&
+    accepted.some(
+      (e) =>
+        (normaliseLanguage(e.match.candidate.lang) ??
+          e.match.candidate.lang) ===
+        (normaliseLanguage(targetLang) ?? targetLang)
+    );
+
+  const rescued: typeof accepted = [];
+  if (targetLang && !haveTargetAlready && playingDurationMs) {
+    for (const entry of scoreAll) {
+      if (entry.evaluation.rejected) continue;
+      if (accepted.includes(entry)) continue;
+      const lang = entry.match.candidate.lang;
+      if (
+        (normaliseLanguage(lang) ?? lang) !==
+        (normaliseLanguage(targetLang) ?? targetLang)
+      ) {
+        continue;
+      }
+      const key = normaliseReleaseName(entry.match.candidate.releaseNames[0]);
+      const conversion = detectFpsConversion({
+        subFps: entry.match.candidate.fps,
+        streamFps: measuredFps,
+        subDurationMs:
+          durationFor(key) ?? entry.match.candidate.statedDurationMs,
+        streamDurationMs: playingDurationMs,
+      });
+      if (!conversion) continue;
+      logger.debug(
+        {
+          provider: entry.match.candidate.provider,
+          conversion: describeConversion(conversion),
+          basis: conversion.basis,
+        },
+        'framerate-rescued a subtitle that would otherwise not be offered'
+      );
+      rescued.push({ ...entry, conversion });
+      break;
+    }
+  }
+
+  const evaluated = [...accepted, ...rescued];
 
   // One rank per candidate, shared by its "use" and "translate" rows so the
   // two lists line up: `2#` in one is the same subtitle as `2#` in the other.
@@ -668,7 +746,7 @@ export async function buildExternalSlots(
   }));
 
   const slots: Subtitle[] = [];
-  for (const { match, i, evaluation, rank } of ranked) {
+  for (const { match, i, evaluation, rank, conversion } of ranked) {
     if (
       usedCount >= useLimit &&
       translateCount >= translateLimit &&
@@ -683,6 +761,7 @@ export async function buildExternalSlots(
       season,
       episode,
       lang: match.candidate.lang,
+      fpsFactor: conversion?.factor,
       // Carried so the (unauthenticated) download route can use this user's own
       // provider keys; the token is encrypted, so they aren't exposed.
       creds: Object.values(creds).some(Boolean) ? creds : undefined,
@@ -698,6 +777,7 @@ export async function buildExternalSlots(
       score: evaluation.score,
       provider: match.candidate.provider,
       machineSource,
+      fpsConversion: conversion ? describeConversion(conversion) : undefined,
       duration: evaluation.duration,
       diffs: evaluation.diffs,
       seasonPack: evaluation.seasonPack,
@@ -762,6 +842,7 @@ export async function buildExternalSlots(
           episode,
           releaseNames: match.candidate.releaseNames,
           statedDurationMs: match.candidate.statedDurationMs,
+          fpsFactor: conversion?.factor,
         },
       });
       if (jobToken) {
