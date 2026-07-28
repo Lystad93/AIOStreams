@@ -120,6 +120,10 @@ router.get(
       sendSrt(res, messageSrt('AIOStreams: invalid or expired subtitle link.'));
       return;
     }
+    // `creds` is destructured away rather than filtered at log time: a field
+    // that never enters the record cannot be leaked by a future edit.
+    const { creds: _creds, ref: _ref, ...loggable } = payload;
+    logger.debug({ ...loggable }, 'external subtitle request resolved');
     try {
       const client = getProviderClient(
         payload.provider as Parameters<typeof getProviderClient>[0]
@@ -161,6 +165,23 @@ router.get(
       sendSrt(res, messageSrt('AIOStreams: invalid or expired subtitle link.'));
       return;
     }
+    // Say which subtitle this URL is for. The token has to be encrypted (it
+    // carries the owner's credential), so the access log alone shows only an
+    // opaque blob — and we have already decrypted it here anyway. Credentials
+    // are deliberately not included.
+    logger.debug(
+      {
+        action,
+        contentId: payload.contentId,
+        targetLang: payload.targetLang,
+        sourcePath: payload.sourcePath,
+        filename: payload.filename,
+        videoSize: payload.videoSize,
+        externalProvider: payload.external?.provider,
+        externalLang: payload.external?.lang,
+      },
+      'subtitle request resolved'
+    );
 
     try {
       const jobKey: SubtitleJobKey = {
