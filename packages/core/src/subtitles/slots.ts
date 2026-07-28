@@ -540,6 +540,16 @@ export async function buildExternalSlots(
   let usedCount = 0;
   let translateCount = 0;
   let targetDirectCount = 0;
+  // Headers that represent the target language, so the ordering below can find
+  // those rows without re-deriving how each was rendered.
+  const targetLangHeaders = new Set<string>();
+  // Rendered once: every target-language row must produce a byte-identical
+  // header, and the exact-path rows render from `targetLang` the same way.
+  const targetHeader = translation
+    ? display.standardCodes
+      ? standardLangCode(translation.targetLanguage)
+      : renderHeader(display.header, { targetLang: translation.targetLanguage })
+    : '';
 
   // Pool every runtime the providers stated, keyed by the release it was
   // stated FOR. Uploaders write the runtime in prose far more often than the
@@ -554,12 +564,32 @@ export async function buildExternalSlots(
       if (k && !stated[k]) stated[k] = m.candidate.statedDurationMs;
     }
   }
+  /**
+   * One runtime for the title, agreed across providers.
+   *
+   * Pooling by exact release name isn't enough: SubSource states a runtime for
+   * the 720p BYNDR release, SubDL's Norwegian entry claims the 1080p one, and
+   * the file playing is the 2160p — three different keys for one master. The
+   * identity gate has already established these are the same title and episode,
+   * so a runtime stated for any of them describes all of them.
+   *
+   * Applied to the SUBTITLE side only. Letting the stream side fall back to the
+   * same figure would make every comparison trivially EQUAL and turn an honest
+   * "unknown" into a fabricated ✓.
+   */
+  const statedValues = Object.values(stated);
+  const titleStatedMs = statedValues.length
+    ? statedValues.sort((a, b) => a - b)[Math.floor(statedValues.length / 2)]
+    : undefined;
+
   const durationFor = (key: string | undefined): number | undefined =>
-    key ? (durationIndex[key] ?? stated[key]) : undefined;
+    (key ? (durationIndex[key] ?? stated[key]) : undefined) ?? titleStatedMs;
 
   // Without a runtime for the release being played, every candidate falls to
   // the UNKNOWN column no matter how good the evidence on the other side is.
-  const playingDurationMs = ourDurationMs ?? durationFor(ourKey);
+  const playingDurationMs =
+    ourDurationMs ??
+    (ourKey ? (durationIndex[ourKey] ?? stated[ourKey]) : undefined);
   if (!playingDurationMs) {
     logger.debug(
       { filename, contentId, statedKeys: Object.keys(stated).length },
@@ -658,14 +688,23 @@ export async function buildExternalSlots(
     if (budgetOk) {
       if (isTargetLanguage) targetDirectCount++;
       else usedCount++;
+      // A subtitle already in the target language belongs under the SAME header
+      // as the extracted/translated rows — it is the same language, so the
+      // player should group them. That means rendering it exactly as the
+      // exact-path rows do: from `targetLang`, with no rank prefix, since any
+      // difference in the string splits one language into two entries.
+      const header = isTargetLanguage
+        ? targetHeader
+        : display.standardCodes
+          ? standardLangCode(match.candidate.lang)
+          : renderHeader(display.header, ctx);
+      if (isTargetLanguage && header) targetLangHeaders.add(header);
       slots.push({
         // `lang` is the big header; everything quantitative moves to `id`,
         // which the player renders smaller.
         id: description,
         url: slotUrl('external', token),
-        lang: display.standardCodes
-          ? standardLangCode(match.candidate.lang)
-          : renderHeader(display.header, ctx),
+        lang: header,
       });
     }
 
@@ -734,7 +773,13 @@ export async function buildExternalSlots(
       }
     }
   }
-  return slots;
+  // Ready-made subtitles in the target language lead: they need no waiting and
+  // no API spend, so they are what most users want to click. Everything else
+  // keeps its score order behind them.
+  return [
+    ...slots.filter((s) => targetLangHeaders.has(s.lang)),
+    ...slots.filter((s) => !targetLangHeaders.has(s.lang)),
+  ];
 }
 
 /**

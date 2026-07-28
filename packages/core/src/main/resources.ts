@@ -1197,6 +1197,10 @@ export async function getSubtitles(
     })
   );
   let allSubtitles: Subtitle[] = [];
+  // Ours are collected separately so they can lead the list: a ready-to-play
+  // subtitle in the target language is the row the user most likely wants, and
+  // third-party addons return theirs in arbitrary order.
+  const ownSubtitles: Subtitle[] = [];
 
   await Promise.all(
     supportedAddons.map(async (addon) => {
@@ -1221,7 +1225,7 @@ export async function getSubtitles(
   // if the feature is off or the release can't be identified.
   try {
     const slots = await buildSubtitleSlots(ctx.userData, type, id, extras);
-    if (slots.length > 0) allSubtitles.push(...slots);
+    if (slots.length > 0) ownSubtitles.push(...slots);
   } catch (error) {
     logger.debug(
       { error: error instanceof Error ? error.message : String(error) },
@@ -1243,7 +1247,9 @@ export async function getSubtitles(
       parsedExtras.filename,
       parsedExtras.videoHash
     );
-    if (external.length > 0) allSubtitles.push(...external);
+    // `buildExternalSlots` already puts target-language rows first, and those
+    // share a header with the extract rows above, so the player groups them.
+    if (external.length > 0) ownSubtitles.push(...external);
   } catch (error) {
     logger.debug(
       { error: error instanceof Error ? error.message : String(error) },
@@ -1251,7 +1257,7 @@ export async function getSubtitles(
     );
   }
 
-  return { success: true, data: allSubtitles, errors };
+  return { success: true, data: [...ownSubtitles, ...allSubtitles], errors };
 }
 
 export async function getAddonCatalog(
