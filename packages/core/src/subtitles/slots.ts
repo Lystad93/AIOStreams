@@ -22,7 +22,10 @@ import {
   getSimpleTextHash,
 } from '../utils/index.js';
 import type { Subtitle, UserData } from '../db/schemas.js';
-import { SubtitleJobRepository } from '../db/index.js';
+import {
+  SubtitleJobRepository,
+  SubtitleSourceRepository,
+} from '../db/index.js';
 import { ExtrasParser } from '../utils/extras.js';
 import { getJob, jobId, resultId, getResult, isStaleJob } from './job-store.js';
 import {
@@ -31,7 +34,7 @@ import {
   getReleaseDurations,
 } from './release-lookup.js';
 import { estimateEtaSeconds, startExactJob } from './pipeline.js';
-import { hasReusableSource } from './sources.js';
+import { hasReusableSource, sourceScope } from './sources.js';
 import { encodeSubtitleToken, encodeExternalToken } from './token.js';
 import { normaliseReleaseName } from './release-name.js';
 import { evaluateCandidate, minDisplayScore } from './relation.js';
@@ -587,12 +590,28 @@ export async function buildExternalSlots(
 
   // Without a runtime for the release being played, every candidate falls to
   // the UNKNOWN column no matter how good the evidence on the other side is.
+  // Priority for the release actually playing:
+  //   1. a runtime WE measured with ffprobe during a previous extraction
+  //   2. what an addon reported in the stream list
+  //   3. what a provider stated for this exact release
+  // The title-level consensus is deliberately absent: applying it to both sides
+  // would make every comparison trivially EQUAL.
+  const measured = await SubtitleSourceRepository.measuredDuration(
+    filename,
+    sourceScope(uuid)
+  ).catch(() => undefined);
   const playingDurationMs =
+    measured ??
     ourDurationMs ??
     (ourKey ? (durationIndex[ourKey] ?? stated[ourKey]) : undefined);
   if (!playingDurationMs) {
     logger.debug(
-      { filename, contentId, statedKeys: Object.keys(stated).length },
+      {
+        filename,
+        contentId,
+        statedKeys: Object.keys(stated).length,
+        indexEntries: Object.keys(durationIndex).length,
+      },
       'no runtime known for the playing release — every subtitle will score in the UNKNOWN column; enable the "duration" merged metadata field'
     );
   }

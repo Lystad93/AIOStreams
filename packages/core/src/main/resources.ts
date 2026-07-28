@@ -736,7 +736,15 @@ function recordReleasesForSubtitles(
     recordServedReleases(
       uuid,
       id,
-      streams.map((s) => ({ url: s.url, size: s.size, filename: s.filename }))
+      // `duration` is the whole point of the index — dropping it here left
+      // every subtitle scoring in the UNKNOWN column while the formatter
+      // happily printed `stream.duration` from the same objects.
+      streams.map((s) => ({
+        url: s.url,
+        size: s.size,
+        filename: s.filename,
+        duration: s.duration,
+      }))
     ).catch((error) => {
       logger.debug(
         { error: error instanceof Error ? error.message : String(error) },

@@ -182,6 +182,32 @@ export const SubtitleSourceRepository = {
   },
 
   /**
+   * The runtime we MEASURED for a release, from a previous extraction.
+   *
+   * This outranks anything an addon reports or an uploader claims: it came from
+   * ffprobe reading the actual file. Once a release has been extracted once,
+   * every later subtitle comparison for it can be exact.
+   */
+  async measuredDuration(
+    filename: string,
+    ownerUuid?: string
+  ): Promise<number | undefined> {
+    const key = normaliseReleaseName(filename);
+    if (!key) return undefined;
+    const scope = ownerUuid ? sql` AND created_by = ${ownerUuid}` : sql``;
+    const row = await getDb().maybeOne<{ [k: string]: unknown; d: number }>(sql`
+      SELECT duration_ms AS d FROM subtitle_sources
+      WHERE match_key = ${key}
+        AND duration_ms IS NOT NULL
+        AND duration_ms > 0${scope}
+      ORDER BY created_at DESC
+      LIMIT 1
+    `);
+    const value = Number(row?.d);
+    return Number.isFinite(value) && value > 0 ? value : undefined;
+  },
+
+  /**
    * Source subtitles for this title whose measured runtime matches `durationMs`
    * within `toleranceMs`.
    *
