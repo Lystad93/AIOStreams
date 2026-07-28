@@ -235,7 +235,10 @@ export const opensubtitlesClient: SubtitleProviderClient = {
       throw new Error(`OpenSubtitles file fetch failed (${file.status})`);
     }
     // Unlike the other providers this is the subtitle itself, not an archive.
-    return decodeSubtitle(Buffer.from(await file.arrayBuffer()));
+    return {
+      srt: decodeSubtitle(Buffer.from(await file.arrayBuffer())),
+      filename: candidate.releaseNames[0],
+    };
   },
 };
 

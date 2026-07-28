@@ -30,6 +30,10 @@ interface SubtitleJob {
   model?: string;
   error?: string;
   cueCount?: number;
+  externalProvider?: string;
+  externalFile?: string;
+  externalReleases?: string[];
+  externalStatedDurationMs?: number;
   createdAt: number;
   updatedAt: number;
   completedAt?: number;
@@ -180,7 +184,9 @@ export function SubtitlesPage() {
                                   : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
                               )}
                             >
-                              {sourceLabel(job)}
+                              {job.sourcePath === 'exact'
+                                ? 'Embedded'
+                                : (job.externalProvider ?? 'External')}
                             </span>
                           </div>
                           {job.status === 'failed' && job.error && (

@@ -89,6 +89,18 @@ export interface ExternalFilters {
   forced?: boolean;
 }
 
+/**
+ * A fetched subtitle plus the name of the file it actually came from.
+ *
+ * The filename matters for a season pack: the entry we matched is the archive,
+ * but what got used is one file inside it, and only that name explains which
+ * episode and release the text belongs to.
+ */
+export interface DownloadedSubtitle {
+  srt: string;
+  filename?: string;
+}
+
 export interface SubtitleProviderClient {
   readonly id: ExternalProviderId;
   /** False when no API key is available; the provider is then skipped. */
@@ -107,5 +119,5 @@ export interface SubtitleProviderClient {
       | { season?: number; episode?: number; releaseKey?: string }
       | undefined,
     creds: ProviderCredentials
-  ): Promise<string>;
+  ): Promise<DownloadedSubtitle>;
 }

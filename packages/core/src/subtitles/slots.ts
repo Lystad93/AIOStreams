@@ -760,6 +760,8 @@ export async function buildExternalSlots(
           lang: match.candidate.lang,
           season,
           episode,
+          releaseNames: match.candidate.releaseNames,
+          statedDurationMs: match.candidate.statedDurationMs,
         },
       });
       if (jobToken) {

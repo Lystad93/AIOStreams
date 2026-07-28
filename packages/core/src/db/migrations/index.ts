@@ -19,6 +19,7 @@ import { subtitleJobDuration } from './0018_subtitle_job_duration.js';
 import { subtitleSources } from './0019_subtitle_sources.js';
 import { subtitleMatchKey } from './0020_subtitle_match_key.js';
 import { subtitleReleaseDuration } from './0021_subtitle_release_duration.js';
+import { subtitleExternalOrigin } from './0022_subtitle_external_origin.js';
 import type { Migration } from './types.js';
 
 export const MIGRATIONS: readonly Migration[] = [
@@ -43,6 +44,7 @@ export const MIGRATIONS: readonly Migration[] = [
   subtitleSources,
   subtitleMatchKey,
   subtitleReleaseDuration,
+  subtitleExternalOrigin,
 ];
 
 export type { Migration } from './types.js';

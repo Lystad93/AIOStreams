@@ -20,6 +20,7 @@ import { opensubtitlesClient } from './opensubtitles.js';
 import type {
   ExternalSearchQuery,
   ExternalSubtitleCandidate,
+  DownloadedSubtitle,
   ExternalProviderId,
   ExternalFilters,
   ProviderCredentials,
@@ -231,7 +232,7 @@ export async function findExternalSubtitles(
  * re-fetch, so they're the ones allowed to be evicted under pressure.
  */
 const fileCache = () =>
-  Cache.getInstance<string, string>(
+  Cache.getInstance<string, DownloadedSubtitle>(
     'subtitle-external-files',
     () => appConfig.subtitles.externalCacheSize
   );
@@ -251,12 +252,13 @@ export async function downloadExternalSubtitle(args: {
   episode?: number;
   releaseKey?: string;
   creds?: ProviderCredentials;
-}): Promise<string> {
+}): Promise<DownloadedSubtitle> {
   const client = getProviderClient(args.provider);
   if (!client) throw new Error(`Unknown subtitle provider: ${args.provider}`);
 
   const cacheKey = getSimpleTextHash(
     [
+      'v2',
       args.provider,
       args.ref,
       args.season ?? '',
@@ -279,7 +281,7 @@ export async function downloadExternalSubtitle(args: {
     }
   }
 
-  const srt = await client.download(
+  const downloaded = await client.download(
     {
       provider: client.id,
       id: args.ref,
@@ -295,8 +297,8 @@ export async function downloadExternalSubtitle(args: {
     args.creds ?? {}
   );
 
-  if (caching) await fileCache().set(cacheKey, srt, FILE_TTL_SECONDS);
-  return srt;
+  if (caching) await fileCache().set(cacheKey, downloaded, FILE_TTL_SECONDS);
+  return downloaded;
 }
 
 export { subsourceClient, subdlClient, opensubtitlesClient };

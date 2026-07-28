@@ -29,6 +29,10 @@ export interface SubtitleJobInfo {
   model?: string;
   error?: string;
   cueCount?: number;
+  externalProvider?: string;
+  externalFile?: string;
+  externalReleases?: string[];
+  externalStatedDurationMs?: number;
   createdAt: number;
   updatedAt: number;
   completedAt?: number;
@@ -43,6 +47,22 @@ export function sourceLabel(job: {
   provider?: string;
 }): string {
   return job.sourcePath === 'exact' ? 'Embedded track' : 'External provider';
+}
+
+const PROVIDER_NAMES: Record<string, string> = {
+  subdl: 'SubDL',
+  subsource: 'SubSource',
+  opensubtitles: 'OpenSub',
+  podnapisi: 'Podnapisi',
+};
+
+function fmtRuntime(ms?: number): string {
+  if (!ms) return '—';
+  const total = Math.round(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return h > 0 ? `${h}h${m}m${s}s` : `${m}m${s}s`;
 }
 
 function fmtTime(ms?: number): string {
@@ -108,16 +128,62 @@ export function JobInfoModal({
         <div>
           <p className="text-xs text-[--muted] mb-1">Origin</p>
           <Row label="Came from" value={sourceLabel(job)} />
-          <Row
-            label={embedded ? 'Extracted from' : 'Provider'}
-            value={embedded ? 'the playing file' : (job.provider ?? '—')}
-          />
-          <Row label="Source file" value={job.filename} copyable mono />
+          {embedded ? (
+            <Row label="Extracted from" value="the playing file" />
+          ) : (
+            // NOT `job.provider` — that column holds the AI provider, so an
+            // external job used to report its origin as "gemini".
+            <Row
+              label="Subtitle provider"
+              value={
+                job.externalProvider
+                  ? (PROVIDER_NAMES[job.externalProvider] ??
+                    job.externalProvider)
+                  : 'unknown'
+              }
+            />
+          )}
+          <Row label="Playing release" value={job.filename} copyable mono />
           <Row
             label="File size"
             value={job.videoSize != null ? formatBytes(job.videoSize) : '—'}
           />
+          {!embedded && (
+            <>
+              <Row
+                label="Subtitle file"
+                value={job.externalFile}
+                copyable
+                mono
+              />
+              <Row
+                label="Stated runtime"
+                value={
+                  job.externalStatedDurationMs
+                    ? `${fmtRuntime(job.externalStatedDurationMs)} (from the uploader's comment)`
+                    : '—'
+                }
+              />
+            </>
+          )}
         </div>
+
+        {!embedded && !!job.externalReleases?.length && (
+          <div>
+            {/* What the entry claimed to fit — the evidence the match score
+                was computed from. */}
+            <p className="text-xs text-[--muted] mb-1">
+              Releases this subtitle claims to fit (
+              {job.externalReleases.length})
+            </p>
+            <Row
+              label="Claimed releases"
+              value={job.externalReleases.join('\n')}
+              copyable
+              mono
+            />
+          </div>
+        )}
 
         <div>
           <p className="text-xs text-[--muted] mb-1">Translation</p>

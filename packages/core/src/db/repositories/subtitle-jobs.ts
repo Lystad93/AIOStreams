@@ -10,7 +10,18 @@ import { normaliseReleaseName } from '../../subtitles/release-name.js';
  * downloadable after cache eviction.
  */
 
-export interface SubtitleJobMeta {
+export interface SubtitleExternalOrigin {
+  /** The SUBTITLE provider (subdl/subsource/opensubtitles), not the AI one. */
+  externalProvider?: string;
+  /** File taken out of the provider's archive — the one actually translated. */
+  externalFile?: string;
+  /** Releases the entry claimed to fit, including any mined from its comment. */
+  externalReleases?: string[];
+  /** Runtime the uploader stated, if their comment gave one. */
+  externalStatedDurationMs?: number;
+}
+
+export interface SubtitleJobMeta extends SubtitleExternalOrigin {
   id: string;
   uuid: string;
   contentId: string;
@@ -32,6 +43,7 @@ export interface SubtitleJobMeta {
 }
 
 /** A list row: metadata plus which SRTs exist and their sizes (not bodies). */
+
 export interface SubtitleJobListRow extends SubtitleJobMeta {
   cueCount?: number;
   extractedBytes: number;
@@ -52,6 +64,10 @@ interface DbRow {
   status: string;
   filename: string | null;
   video_size: number | string | null;
+  external_provider?: string | null;
+  external_file?: string | null;
+  external_releases?: string | null;
+  external_stated_duration_ms?: number | string | null;
   provider: string | null;
   model: string | null;
   cue_count: number | string | null;
@@ -67,12 +83,27 @@ interface DbRow {
 const num = (v: number | string | null | undefined): number | undefined =>
   v == null ? undefined : Number(v);
 
+/** Stored as JSON text; a malformed value is treated as absent, not fatal. */
+function parseJsonArray(v: unknown): string[] | undefined {
+  if (typeof v !== 'string' || !v) return undefined;
+  try {
+    const parsed = JSON.parse(v);
+    return Array.isArray(parsed) ? parsed.map(String) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function toListRow(r: DbRow): SubtitleJobListRow {
   return {
     id: r.id,
     uuid: r.uuid,
     contentId: r.content_id,
     releaseHash: r.release_hash,
+    externalProvider: r.external_provider || undefined,
+    externalFile: r.external_file || undefined,
+    externalReleases: parseJsonArray(r.external_releases),
+    externalStatedDurationMs: num(r.external_stated_duration_ms),
     sourcePath: r.source_path,
     targetLang: r.target_lang,
     sourceLang: r.source_lang ?? undefined,
@@ -100,7 +131,9 @@ export const SubtitleJobRepository = {
       INSERT INTO subtitle_jobs (
         id, uuid, content_id, release_hash, source_path, target_lang,
         source_lang, status, filename, video_size, provider, model, error,
-        created_at, updated_at, completed_at, match_key, release_duration_ms
+        created_at, updated_at, completed_at, match_key, release_duration_ms,
+        external_provider, external_file, external_releases,
+        external_stated_duration_ms
       ) VALUES (
         ${meta.id}, ${meta.uuid}, ${meta.contentId}, ${meta.releaseHash},
         ${meta.sourcePath}, ${meta.targetLang}, ${meta.sourceLang ?? null},
@@ -108,7 +141,14 @@ export const SubtitleJobRepository = {
         ${meta.provider ?? null}, ${meta.model ?? null}, ${meta.error ?? null},
         ${meta.createdAt}, ${meta.updatedAt}, ${meta.completedAt ?? null},
         ${normaliseReleaseName(meta.filename) || null},
-        ${meta.releaseDurationMs ?? null}
+        ${meta.releaseDurationMs ?? null},
+        ${meta.externalProvider ?? null}, ${meta.externalFile ?? null},
+        ${
+          meta.externalReleases?.length
+            ? JSON.stringify(meta.externalReleases)
+            : null
+        },
+        ${meta.externalStatedDurationMs ?? null}
       )
       ON CONFLICT (id) DO UPDATE SET
         source_lang = ${meta.sourceLang ?? null},
@@ -121,7 +161,24 @@ export const SubtitleJobRepository = {
         updated_at = ${meta.updatedAt},
         completed_at = ${meta.completedAt ?? null},
         match_key = ${normaliseReleaseName(meta.filename) || null},
-        release_duration_ms = ${meta.releaseDurationMs ?? null}
+        release_duration_ms = ${meta.releaseDurationMs ?? null},
+        -- COALESCE so a later status write can't blank an origin that an
+        -- earlier one recorded: only the download knows these values.
+        external_provider = COALESCE(
+          ${meta.externalProvider ?? null}, external_provider
+        ),
+        external_file = COALESCE(${meta.externalFile ?? null}, external_file),
+        external_releases = COALESCE(
+          ${
+            meta.externalReleases?.length
+              ? JSON.stringify(meta.externalReleases)
+              : null
+          },
+          external_releases
+        ),
+        external_stated_duration_ms = COALESCE(
+          ${meta.externalStatedDurationMs ?? null}, external_stated_duration_ms
+        )
     `);
   },
 
@@ -162,6 +219,8 @@ export const SubtitleJobRepository = {
       SELECT id, uuid, content_id, release_hash, source_path, target_lang,
              source_lang, status, filename, video_size, provider, model,
              cue_count, error, created_at, updated_at, completed_at, duration_ms,
+             external_provider, external_file, external_releases,
+             external_stated_duration_ms,
              LENGTH(extracted_srt) AS extracted_len,
              LENGTH(translated_srt) AS translated_len
       FROM subtitle_jobs

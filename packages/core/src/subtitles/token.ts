@@ -32,6 +32,15 @@ export interface SubtitleTokenPayload {
     lang: string;
     season?: number;
     episode?: number;
+    /**
+     * What the entry claimed to fit, and any runtime its uploader stated.
+     *
+     * Carried here rather than re-fetched: the job runs long after the search
+     * result that produced it, and the payload is deflated before encryption,
+     * so a list of near-identical release names costs very little.
+     */
+    releaseNames?: string[];
+    statedDurationMs?: number;
   };
 }
 

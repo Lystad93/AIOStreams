@@ -132,7 +132,7 @@ router.get(
         sendSrt(res, messageSrt('AIOStreams: unknown subtitle provider.'));
         return;
       }
-      const srt = await downloadExternalSubtitle({
+      const downloaded = await downloadExternalSubtitle({
         provider: client.id,
         ref: payload.ref,
         lang: payload.lang,
@@ -141,7 +141,7 @@ router.get(
         releaseKey: payload.releaseKey,
         creds: payload.creds,
       });
-      sendSrt(res, srt);
+      sendSrt(res, downloaded.srt);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger.warn(`external subtitle fetch failed: ${message}`);
@@ -271,6 +271,8 @@ router.get(
             season: payload.external.season,
             episode: payload.external.episode,
             releaseKey: payload.filename,
+            releaseNames: payload.external.releaseNames,
+            statedDurationMs: payload.external.statedDurationMs,
             creds: resolveExternalConfig(userData)?.creds,
           },
           sourceLanguages: cfg.sourceLanguages,

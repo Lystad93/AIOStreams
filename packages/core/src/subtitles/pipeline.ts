@@ -95,6 +95,10 @@ export interface RunJobInput {
     episode?: number;
     releaseKey?: string;
     creds?: ProviderCredentials;
+    /** What the entry claimed to fit, for the dashboard's origin record. */
+    releaseNames?: string[];
+    /** Runtime the uploader stated, if their comment gave one. */
+    statedDurationMs?: number;
   };
   /** Ordered preferred source languages for track selection (§4.4). */
   sourceLanguages: string[];
@@ -156,7 +160,12 @@ async function persistMeta(
   job: SubtitleJob,
   input: RunJobInput,
   status: SubtitleJob['status'],
-  extra?: { sourceLang?: string; error?: string; completedAt?: number }
+  extra?: {
+    sourceLang?: string;
+    error?: string;
+    completedAt?: number;
+    externalFile?: string;
+  }
 ): Promise<void> {
   try {
     await SubtitleJobRepository.saveMeta({
@@ -171,8 +180,15 @@ async function persistMeta(
       filename: input.filename,
       videoSize: input.videoSize,
       releaseDurationMs: input.durationMs,
+      // `provider` is the AI provider; the subtitle's origin is recorded
+      // separately so the dashboard can't confuse "translated by gemini" with
+      // "fetched from SubDL".
       provider: input.providerId,
       model: input.model,
+      externalProvider: input.externalSource?.provider,
+      externalFile: extra?.externalFile,
+      externalReleases: input.externalSource?.releaseNames,
+      externalStatedDurationMs: input.externalSource?.statedDurationMs,
       error: extra?.error,
       createdAt: job.createdAt,
       updatedAt: Date.now(),
@@ -218,7 +234,8 @@ async function runExactJob(input: RunJobInput): Promise<void> {
         },
         'translating externally-sourced subtitle — no extraction needed'
       );
-      srt = await downloadExternalSubtitle(input.externalSource);
+      const downloaded = await downloadExternalSubtitle(input.externalSource);
+      srt = downloaded.srt;
       sourceLang = input.externalSource.lang;
       return await finishTranslation({
         input,
@@ -226,6 +243,10 @@ async function runExactJob(input: RunJobInput): Promise<void> {
         job,
         srt,
         sourceLang,
+        // The file inside the archive we actually used — for a season pack
+        // that is the only thing identifying which episode and release the
+        // text belongs to.
+        externalFile: downloaded.filename,
         provider,
         mark,
         startedMs,
@@ -316,6 +337,7 @@ async function finishTranslation(args: {
   job: SubtitleJob;
   srt: string;
   sourceLang: string | undefined;
+  externalFile?: string;
   provider: TranslationProvider;
   mark: (patch: Partial<SubtitleJob>) => Promise<void>;
   startedMs: number;
@@ -326,6 +348,7 @@ async function finishTranslation(args: {
     job,
     srt,
     sourceLang: rawSourceLang,
+    externalFile,
     provider,
     mark,
     startedMs,
@@ -352,7 +375,7 @@ async function finishTranslation(args: {
     cues.length,
     Date.now()
   ).catch(() => {});
-  await persistMeta(job, input, 'running', { sourceLang });
+  await persistMeta(job, input, 'running', { sourceLang, externalFile });
 
   logger.info(
     { cues: cues.length, source: sourceLang, target: job.targetLang },

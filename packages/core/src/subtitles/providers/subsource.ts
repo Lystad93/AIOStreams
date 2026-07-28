@@ -13,6 +13,7 @@ import { readZipEntries, subtitleEntries } from './zip.js';
 import { parseUploaderComment } from '../comment-parse.js';
 import { matchesEpisode, scoreRelease } from '../match.js';
 import type {
+  DownloadedSubtitle,
   ExternalSearchQuery,
   ExternalSubtitleCandidate,
   ProviderCredentials,
@@ -189,7 +190,7 @@ export function pickFromArchive(
   buf: Buffer,
   want: { season?: number; episode?: number; releaseKey?: string } | undefined,
   providerLabel: string
-): string {
+): DownloadedSubtitle {
   const files = subtitleEntries(readZipEntries(buf));
   if (files.length === 0) {
     throw new Error(`${providerLabel} archive contained no subtitle file`);
@@ -219,7 +220,7 @@ export function pickFromArchive(
     { provider: providerLabel, chosen: best.name, of: files.length },
     'picked subtitle from archive'
   );
-  return decodeSubtitle(best.read());
+  return { srt: decodeSubtitle(best.read()), filename: best.name };
 }
 
 /**
