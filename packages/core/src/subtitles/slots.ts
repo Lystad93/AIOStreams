@@ -34,6 +34,8 @@ import { estimateEtaSeconds, startExactJob } from './pipeline.js';
 import { hasReusableSource } from './sources.js';
 import { encodeSubtitleToken, encodeExternalToken } from './token.js';
 import { normaliseReleaseName } from './release-name.js';
+import { evaluateCandidate, minDisplayScore } from './relation.js';
+import { buildLabel, buildDescription } from './render.js';
 import {
   findExternalSubtitles,
   type ScoredSubtitle,
@@ -264,12 +266,14 @@ export async function buildSubtitleSlots(
     // different release and the equal runtime is the whole reason it's offered.
     // A name match needs no such caveat.
     slots.push({
-      id: SLOT_ID.finished,
-      url: slotUrl('result', token),
-      lang:
+      id:
         durable.matchedBy === 'duration'
-          ? `${cfg.targetLanguage} · duration ✓`
-          : cfg.targetLanguage,
+          ? `${SLOT_ID.finished}-duration`
+          : SLOT_ID.finished,
+      url: slotUrl('result', token),
+      // The player keys the track's language off this string, so the finished
+      // row stays a bare language name; the match evidence rides in `id`.
+      lang: cfg.targetLanguage,
     });
     return slots;
   }
@@ -297,23 +301,28 @@ export async function buildSubtitleSlots(
     slots.push({
       id: SLOT_ID.notReady,
       url: slotUrl('result', token),
-      lang: `Translating Exact → ${cfg.targetLanguage}… not ready (${fmtEta(
-        job.etaSeconds || estimateEtaSeconds({ fileSizeBytes: served.size })
-      )})`,
+      lang: `${buildLabel({
+        targetLang: cfg.targetLanguage,
+        score: 100,
+        etaText: fmtEta(
+          job.etaSeconds || estimateEtaSeconds({ fileSizeBytes: served.size })
+        ),
+      })} … not ready`,
     });
     return slots;
   }
 
   // 3. No stored result and nothing running → offer (or re-offer, after a
   // failure) the trigger. Clicking it starts the background job (spec §5).
-  const label =
-    job?.status === 'failed'
-      ? `Retry: Translate Exact → ${cfg.targetLanguage} (${eta})`
-      : `Translate Exact → ${cfg.targetLanguage} (${eta})`;
+  const exactLabel = buildLabel({
+    targetLang: cfg.targetLanguage,
+    score: 100,
+    etaText: eta,
+  });
   slots.push({
-    id: SLOT_ID.trigger,
+    id: job?.status === 'failed' ? SLOT_ID.failed : SLOT_ID.trigger,
     url: slotUrl('exact', token),
-    lang: label,
+    lang: `${job?.status === 'failed' ? 'Retry ' : ''}${exactLabel} (Embedded)`,
   });
   return slots;
 }
@@ -467,8 +476,37 @@ export async function buildExternalSlots(
   let usedCount = 0;
   let translateCount = 0;
 
+  // Re-score every candidate against the playing release using the match spec
+  // (§4–§6): parsed-field tiers rather than token overlap, with the duration
+  // cache supplying runtimes for release names we've seen in a stream list.
+  const evaluated = matches
+    .map((match, i) => {
+      // A candidate may claim several release names; take its best.
+      const names = match.candidate.releaseNames.length
+        ? match.candidate.releaseNames
+        : [undefined];
+      let best: ReturnType<typeof evaluateCandidate> | undefined;
+      for (const name of names) {
+        const key = name ? normaliseReleaseName(name) : '';
+        const evaluation = evaluateCandidate({
+          subFilename: name,
+          streamFilename: filename,
+          subDurationMs: key ? durationIndex[key] : undefined,
+          streamDurationMs: ourDurationMs,
+        });
+        if (!best || evaluation.score > best.score) best = evaluation;
+      }
+      return { match, i, evaluation: best! };
+    })
+    // An identity contradiction is a reject, not a low score, and anything
+    // under the floor is computed but never rendered (§4, §6).
+    .filter(
+      (e) => !e.evaluation.rejected && e.evaluation.score >= minDisplayScore()
+    )
+    .sort((a, b) => b.evaluation.score - a.evaluation.score);
+
   const slots: Subtitle[] = [];
-  for (const [i, match] of matches.entries()) {
+  for (const { match, i, evaluation } of evaluated) {
     if (usedCount >= useLimit && translateCount >= translateLimit) break;
     const token = encodeExternalToken({
       provider: match.candidate.provider,
@@ -482,28 +520,23 @@ export async function buildExternalSlots(
       creds: Object.values(creds).some(Boolean) ? creds : undefined,
     });
     if (!token) continue;
-    // The tier matters more than the number: an exact match is evidence, a
-    // percentage is an estimate of how well the timing should line up.
-    const label =
-      match.tier === 'exact-file'
-        ? `${match.candidate.lang} — 100% exact file`
-        : match.tier === 'exact-release'
-          ? `${match.candidate.lang} — 100% exact release`
-          : `${match.candidate.lang} — ${match.score}% match`;
-    // Surfaced separately from the percentage: a runtime match is independent
-    // evidence that the timing lines up, even when the names look different.
-    const duration = match.durationMatched ? ' · duration ✓' : '';
-    const provider = `${match.candidate.provider}${
-      match.candidate.hearingImpaired ? ', SDH' : ''
-    }`;
+
+    const description = buildDescription(evaluation, {
+      provider: match.candidate.provider,
+      streamDurationMs: ourDurationMs,
+    });
 
     // 1. Use it as-is — plays immediately, costs nothing.
     if (usedCount < useLimit) {
       usedCount++;
+      const label = buildLabel({
+        sourceLang: match.candidate.lang,
+        score: evaluation.score,
+      });
       slots.push({
         id: `aiostreams-external-use-${match.candidate.provider}-${i}`,
         url: slotUrl('external', token),
-        lang: `Use: ${label}${duration} (${provider})`,
+        lang: `${label} ${description}`,
       });
     }
 
@@ -559,11 +592,23 @@ export async function buildExternalSlots(
         slots.push({
           id: `aiostreams-external-translate-${match.candidate.provider}-${i}`,
           url: slotUrl(done ? 'result' : 'exact', jobToken),
+          // A finished translation keeps the plain target language in `lang`
+          // so the player treats the track as that language; the in-flight and
+          // offer rows use the spec's `TR: NOR<ENG 60%` grammar.
           lang: done
-            ? `${translation.targetLanguage} (translated from ${match.candidate.lang})`
+            ? translation.targetLanguage
             : running
-              ? `Translating ${match.candidate.lang} → ${translation.targetLanguage}… not ready`
-              : `Translate → ${translation.targetLanguage}: ${label}${duration} (${provider})`,
+              ? `${buildLabel({
+                  targetLang: translation.targetLanguage,
+                  sourceLang: match.candidate.lang,
+                  score: evaluation.score,
+                })} … not ready`
+              : `${buildLabel({
+                  targetLang: translation.targetLanguage,
+                  sourceLang: match.candidate.lang,
+                  score: evaluation.score,
+                  etaText: fmtEta(estimateEtaSeconds({ reuseSource: true })),
+                })} ${description}`,
         });
       }
     }

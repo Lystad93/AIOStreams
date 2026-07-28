@@ -31,6 +31,76 @@ export const subtitlesSchema = {
     requiresRestart: false,
     secret: false,
   },
+  durationToleranceMs: {
+    schema: nonNegativeInt,
+    default: 2000,
+    label: 'Duration match tolerance (ms)',
+    description:
+      'How far two runtimes may differ and still count as the same cut when scoring a subtitle against the playing release. Exact equality never fires in practice — addons round differently and encodes pad the tail — so 2 seconds is the working threshold.',
+    env: 'SUBTITLE_DURATION_TOLERANCE_MS',
+    requiresRestart: false,
+    secret: false,
+  },
+  diffVerbosity: {
+    schema: z.enum(['minimal', 'normal', 'full']),
+    default: 'normal',
+    label: 'Subtitle difference detail',
+    description:
+      'How much of the difference between a subtitle and the playing release to spell out. `minimal` shows only differences that can affect sync (network, edition, revision, group, source type). `normal` adds a single marker for cosmetic differences. `full` lists every field, capped by the setting below.',
+    env: 'SUBTITLE_DIFF_VERBOSITY',
+    requiresRestart: false,
+    secret: false,
+  },
+  maxDiffTokens: {
+    schema: nonNegativeInt,
+    default: 6,
+    label: 'Maximum difference tokens',
+    description:
+      'Hard cap on how many difference groups are rendered in `full` mode; the rest collapse to a single overflow marker.',
+    env: 'SUBTITLE_MAX_DIFF_TOKENS',
+    requiresRestart: false,
+    secret: false,
+  },
+  minDisplayScore: {
+    schema: nonNegativeInt,
+    default: 50,
+    label: 'Minimum subtitle score to display',
+    description:
+      'Candidates scoring below this are computed but never shown. Raise it to keep the list short, lower it to see weak matches that only duration agreement supports.',
+    env: 'SUBTITLE_MIN_DISPLAY_SCORE',
+    requiresRestart: false,
+    secret: false,
+  },
+  seasonPackPenalty: {
+    schema: nonNegativeInt,
+    default: 10,
+    label: 'Season pack penalty',
+    description:
+      'Subtracted from a whole-season subtitle that could not be resolved to the playing episode. The pack is still scored on its own release fields first, because a pack from the identical release is strong evidence the episode inside will sync.',
+    env: 'SUBTITLE_SEASON_PACK_PENALTY',
+    requiresRestart: false,
+    secret: false,
+  },
+  durationDeltaMode: {
+    schema: z.boolean(),
+    default: false,
+    label: 'Show duration mismatch as a delta',
+    description:
+      "Render a mismatched runtime as a signed difference (`X +3m00s`) instead of the subtitle's absolute runtime (`X 1h53m28s`). Shorter, and usually easier to judge at a glance.",
+    env: 'SUBTITLE_DURATION_DELTA_MODE',
+    requiresRestart: false,
+    secret: false,
+  },
+  unicodeArrow: {
+    schema: z.boolean(),
+    default: false,
+    label: 'Use a Unicode arrow in subtitle labels',
+    description:
+      'Render translation direction as `NOR←ENG` instead of `NOR<ENG`. Off by default because the arrow does not render reliably across all Stremio clients.',
+    env: 'SUBTITLE_UNICODE_ARROW',
+    requiresRestart: false,
+    secret: false,
+  },
   extractionTimeoutSeconds: {
     schema: nonNegativeInt,
     default: 1800,
