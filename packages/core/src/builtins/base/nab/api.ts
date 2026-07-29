@@ -82,6 +82,14 @@ const AttributeSchema = z
   .object({ $: z.object({ name: z.string(), value: convertString }) })
   .transform((attr) => ({ [attr.$.name]: attr.$.value }));
 
+const GuidSchema = z
+  .array(z.union([z.string(), z.object({ _: z.string().optional() })]))
+  .optional()
+  .transform((arr) => {
+    const first = arr?.[0];
+    return (typeof first === 'string' ? first : first?._) || undefined;
+  });
+
 // Create specific schemas for each namespace
 const createTorznabItemSchema = () =>
   z
@@ -91,9 +99,7 @@ const createTorznabItemSchema = () =>
         .array(z.string())
         .optional()
         .transform((arr) => arr?.[0]),
-      guid: z
-        .array(z.union([z.string(), z.object({ _: z.string() })]))
-        .transform((arr) => (typeof arr[0] === 'string' ? arr[0] : arr[0]._)),
+      guid: GuidSchema,
       pubDate: z.array(z.string()).transform((arr) => arr[0]),
       jackettindexer: z
         .array(
@@ -163,9 +169,7 @@ const createNewznabItemSchema = () =>
         .array(z.string())
         .optional()
         .transform((arr) => arr?.[0]),
-      guid: z
-        .array(z.union([z.string(), z.object({ _: z.string() })]))
-        .transform((arr) => (typeof arr[0] === 'string' ? arr[0] : arr[0]._)),
+      guid: GuidSchema,
       pubDate: z.array(z.string()).transform((arr) => arr[0]),
       size: z
         .array(z.string())

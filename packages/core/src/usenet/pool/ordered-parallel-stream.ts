@@ -1,6 +1,7 @@
 import { Readable } from 'node:stream';
 import type { Logger } from '../../logging/logger.js';
-import { ArticleNotFoundError } from '../nntp/errors.js';
+import { definitiveLossKind } from '../nntp/errors.js';
+import type { HoleKind } from '../holes.js';
 
 export interface SlotPoolOptions {
   /** Hard cap on pooled slots; beyond it acquire() returns throwaway buffers. */
@@ -228,35 +229,32 @@ export abstract class OrderedParallelStream extends Readable {
    * (exact segment size / window length) AND their policy-owner consult; the
    * base owns the shared pad-or-destroy flow ({@link settleTaskFailure}).
    */
-  protected tryPadHole(_idx: number): number | undefined {
+  protected tryPadHole(_idx: number, _kind: HoleKind): number | undefined {
     return undefined;
   }
 
   /** Zero-fill task `idx` if {@link tryPadHole} approves; true when padded. */
-  protected padTask(idx: number): boolean {
-    const bytes = this.tryPadHole(idx);
+  protected padTask(idx: number, kind: HoleKind): boolean {
+    const bytes = this.tryPadHole(idx, kind);
     if (bytes === undefined || bytes <= 0) return false;
     this.logger.warn(
-      { ...this.logContext(idx), bytes },
-      'task data missing on all providers; zero-filled'
+      { ...this.logContext(idx), bytes, kind },
+      kind === 'undecodable'
+        ? 'task data undecodable on all providers; zero-filled'
+        : 'task data missing on all providers; zero-filled'
     );
     this.completeTask(idx, Buffer.alloc(bytes));
     return true;
   }
 
   /**
-   * Settle a failed task: a definitive all-providers miss may be zero-filled
+   * Settle a failed task: a definitive all-providers verdict may be zero-filled
    * (exact length only, policy-approved); anything else (transient errors,
    * partial-provider misses, refused pads) destroys the stream.
    */
   protected settleTaskFailure(idx: number, err: unknown): void {
-    if (
-      err instanceof ArticleNotFoundError &&
-      err.allProviders &&
-      this.padTask(idx)
-    ) {
-      return;
-    }
+    const kind = definitiveLossKind(err);
+    if (kind !== undefined && this.padTask(idx, kind)) return;
     this.failTask(idx, err);
   }
 

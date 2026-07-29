@@ -232,10 +232,16 @@ export class HoleAccumulator {
   }
 }
 
+/**
+ * Why a span is unservable.
+ */
+export type HoleKind = 'missing' | 'undecodable';
+
 /** Where a playback hole was met (one of the two serve paths). */
 export interface HoleInfo {
   /** Backing NZB file index (segment space owner). */
   nzbFileIndex: number;
+  kind: HoleKind;
   /** Segment index within the file (plain SegmentsStream path). */
   segmentIndex?: number;
   /** Archive-logical byte offset of the failed window (archive path). */

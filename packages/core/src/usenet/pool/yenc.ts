@@ -28,12 +28,18 @@ export interface DecodedSegment {
  * encoding" instead of a generic open failure.
  */
 export class YencDecodeError extends Error {
+  readonly terminal: boolean;
+  cause?: unknown;
+
   constructor(
     readonly code: string | undefined,
-    message: string
+    message: string,
+    opts: { terminal?: boolean; cause?: unknown } = {}
   ) {
     super(message);
     this.name = 'YencDecodeError';
+    this.terminal = opts.terminal ?? false;
+    if (opts.cause !== undefined) this.cause = opts.cause;
   }
 }
 

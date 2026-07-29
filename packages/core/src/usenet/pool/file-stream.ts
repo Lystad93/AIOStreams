@@ -3,7 +3,7 @@ import { createLogger } from '../../logging/logger.js';
 import { MultiProviderPool } from './multi-provider-pool.js';
 import { SegmentsStream } from './segments-stream.js';
 import { isImplausibleYencFileSize } from './yenc.js';
-import { ArticleNotFoundError } from '../nntp/errors.js';
+import { definitiveLossKind } from '../nntp/errors.js';
 import { CommandPriority, EngineOptions, NzbSegmentRef } from '../types.js';
 import type { HoleHooks } from '../holes.js';
 
@@ -402,12 +402,13 @@ export class FileStream implements SeekableStream {
             ? (local) => this.exactSegmentSize(segmentIndex + local)
             : undefined,
           onHole: holes
-            ? (local, bytes) =>
+            ? (local, bytes, kind) =>
                 holes.hooks.onHole({
                   nzbFileIndex: holes.fileIndex,
                   segmentIndex: segmentIndex + local,
                   targetOffset: this.segmentStartByte(segmentIndex + local),
                   bytes,
+                  kind,
                 })
             : undefined,
           knownHoles: knownLocal,
@@ -576,7 +577,8 @@ export class FileStream implements SeekableStream {
       // A seek landing ON a hole must not kill the locate: with a proven part
       // grid the segment's range is known without its bytes. The actual read
       // of the hole is then the padding policy's problem, not the seek's.
-      if (err instanceof ArticleNotFoundError && err.allProviders) {
+      const kind = definitiveLossKind(err);
+      if (kind !== undefined) {
         const part = this.partGridSize();
         if (part !== undefined) {
           const begin = index * part;
@@ -586,8 +588,8 @@ export class FileStream implements SeekableStream {
           const range = { begin, end };
           this.knownRanges.set(index, range);
           logger.debug(
-            { nzbHash: this.nzbHash, index, begin, end },
-            'segment missing on all providers; synthesized grid range for seek'
+            { nzbHash: this.nzbHash, index, begin, end, kind },
+            'segment unservable on all providers; synthesized grid range for seek'
           );
           return range;
         }

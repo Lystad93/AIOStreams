@@ -540,6 +540,7 @@ export class LocalSegmentFetcher implements SegmentFetcher {
     signal?: AbortSignal
   ): Promise<T> {
     const notFound = new Set<string>();
+    const undecodable = new Map<string, YencDecodeError>();
     let lastTransient: NntpError | null = null;
     let lastUnreachable: NntpError | null = null;
     let triedAny = false;
@@ -557,7 +558,7 @@ export class LocalSegmentFetcher implements SegmentFetcher {
       if (
         pool.isBackup &&
         !escalationLogged &&
-        (notFound.size > 0 || lastTransient)
+        (notFound.size > 0 || undecodable.size > 0 || lastTransient)
       ) {
         escalationLogged = true;
         logger.debug(
@@ -606,9 +607,20 @@ export class LocalSegmentFetcher implements SegmentFetcher {
           continue;
         }
         if (err instanceof YencDecodeError) {
-          // The article was read off the wire; the content is undecodable but
-          // the connection is healthy. Surface it (don't fail over as missing).
-          throw err;
+          // The article was delivered, so the connection is healthy; this
+          // backbone's copy is corrupt. That can be provider-scoped, so
+          // ask the rest before giving up.
+          undecodable.set(pool.id, err);
+          if (nzbHash) this.affinity.record(nzbHash, pool.id, true, 'body');
+          logger.debug(
+            {
+              provider: pool.label,
+              messageId: segment.messageId,
+              code: err.code,
+            },
+            'segment undecodable on provider'
+          );
+          continue;
         }
         if (
           err instanceof NntpError &&
@@ -631,15 +643,35 @@ export class LocalSegmentFetcher implements SegmentFetcher {
     if (!triedAny) {
       throw new NntpError('no_providers', 'no usable providers available');
     }
-    if (notFound.size === 0) {
-      // No provider actually reported the article missing (430). The fetch failed
-      // because providers were unreachable/at-capacity/transient: surface THAT,
-      // never a false ArticleNotFoundError (which the import layer treats as
-      // "incomplete or removed" and persists as dead).
+    if (notFound.size === 0 && undecodable.size === 0) {
+      // No provider actually reported the article missing (430) or handed back
+      // a corrupt copy. The fetch failed because providers were
+      // unreachable/at-capacity/transient: surface THAT, never a false
+      // ArticleNotFoundError (which the import layer treats as "incomplete or
+      // removed" and persists as dead).
       throw (
         lastTransient ??
         lastUnreachable ??
         new NntpError('no_providers', 'no usable providers available')
+      );
+    }
+    const exhausted = !lastTransient && !lastUnreachable;
+    if (undecodable.size > 0) {
+      // report the corruption rather than a miss.
+      const first = undecodable.values().next().value!;
+      logger.debug(
+        {
+          messageId: segment.messageId,
+          undecodableOn: [...undecodable.keys()],
+          notFoundOn: [...notFound],
+          code: first.code,
+        },
+        'article undecodable on every provider holding it'
+      );
+      throw new YencDecodeError(
+        first.code,
+        `article undecodable on all providers: ${segment.messageId} (${first.code ?? 'decode failed'})`,
+        { terminal: exhausted, cause: first }
       );
     }
     logger.debug(
@@ -648,12 +680,7 @@ export class LocalSegmentFetcher implements SegmentFetcher {
     );
     throw new ArticleNotFoundError(
       `article not found on any provider: ${segment.messageId}`,
-      {
-        messageId: segment.messageId,
-        // Only "all providers" when every provider we tried actually answered 430
-        // (no provider was unreachable or merely transiently failing).
-        allProviders: !lastTransient && !lastUnreachable,
-      }
+      { messageId: segment.messageId, allProviders: exhausted }
     );
   }
 

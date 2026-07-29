@@ -343,6 +343,9 @@ export abstract class BaseNabAddon<
       total: initialResponse.total,
     });
 
+    const identity = (r: SearchResultItem<A['namespace']>): string =>
+      r.guid ?? r.enclosure?.[0]?.url ?? r.link ?? r.title;
+
     // if both first and last items are duplicates, the page is likely a duplicate
     const areResultsDuplicate = (
       existing: SearchResultItem<A['namespace']>[],
@@ -350,11 +353,11 @@ export abstract class BaseNabAddon<
     ): boolean => {
       if (newResults.length === 0) return false;
 
-      const firstNew = newResults[0];
-      const lastNew = newResults[newResults.length - 1];
+      const firstNew = identity(newResults[0]);
+      const lastNew = identity(newResults[newResults.length - 1]);
 
-      const firstExists = existing.some((r) => r.guid === firstNew.guid);
-      const lastExists = existing.some((r) => r.guid === lastNew.guid);
+      const firstExists = existing.some((r) => identity(r) === firstNew);
+      const lastExists = existing.some((r) => identity(r) === lastNew);
 
       return firstExists && lastExists;
     };

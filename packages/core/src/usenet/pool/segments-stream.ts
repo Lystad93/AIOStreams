@@ -2,7 +2,7 @@ import { createLogger } from '../../logging/logger.js';
 import { MultiProviderPool } from './multi-provider-pool.js';
 import { OrderedParallelStream } from './ordered-parallel-stream.js';
 import { CommandPriority, NzbSegmentRef } from '../types.js';
-import type { HoleDecision } from '../holes.js';
+import type { HoleDecision, HoleKind } from '../holes.js';
 
 const logger = createLogger('usenet/segments');
 
@@ -29,11 +29,11 @@ export interface SegmentsStreamOptions {
    */
   sizeForSegment?: (idx: number) => number | undefined;
   /**
-   * Decision hook for a definitive all-providers miss: `pad` emits exactly
+   * Decision hook for a definitive all-providers verdict: `pad` emits exactly
    * `bytes` zeros in the segment's place, `fail` destroys the stream (legacy
    * behaviour, also used when the hook or the exact size is absent).
    */
-  onHole?: (idx: number, bytes: number) => HoleDecision;
+  onHole?: (idx: number, bytes: number, kind: HoleKind) => HoleDecision;
   /**
    * Segments (LOCAL indices) already known missing from a persisted hole
    * map: zero-filled immediately, without burning a failover round-trip.
@@ -59,7 +59,7 @@ export class SegmentsStream extends OrderedParallelStream {
   private abortController = new AbortController();
   private onExternalAbort?: () => void;
   private sizeForSegment?: (idx: number) => number | undefined;
-  private onHole?: (idx: number, bytes: number) => HoleDecision;
+  private onHole?: (idx: number, bytes: number, kind: HoleKind) => HoleDecision;
   private knownHoles?: ReadonlySet<number>;
 
   constructor(opts: SegmentsStreamOptions) {
@@ -98,8 +98,9 @@ export class SegmentsStream extends OrderedParallelStream {
   protected startTask(idx: number): void {
     const segment = this.segments[idx];
     // Replay pre-pad: a segment already known missing (persisted hole map)
-    // zero-fills immediately, with no fetch or failover round-trip.
-    if (this.knownHoles?.has(idx) && this.padTask(idx)) return;
+    // zero-fills immediately, with no fetch or failover round-trip. Only
+    // confirmed 430s are persisted, hence the fixed kind.
+    if (this.knownHoles?.has(idx) && this.padTask(idx, 'missing')) return;
     // Slots are acquired lazily via the provider (never for cache hits) and
     // idempotently across failover retries. Slot size is bounded by
     // `segment.bytes`, an upper bound on the decoded size; when that is
@@ -133,17 +134,20 @@ export class SegmentsStream extends OrderedParallelStream {
    * A segment may be zero-filled only with its exact decoded size and only
    * when the owner's hole hook approves.
    */
-  protected override tryPadHole(idx: number): number | undefined {
+  protected override tryPadHole(
+    idx: number,
+    kind: HoleKind
+  ): number | undefined {
     if (!this.onHole || !this.sizeForSegment) return undefined;
     const bytes = this.sizeForSegment(idx);
     if (bytes === undefined || bytes <= 0) {
       logger.warn(
-        { ...this.logContext(idx) },
-        'segment missing on all providers but its exact size is unknown (no locked part grid); cannot pad'
+        { ...this.logContext(idx), kind },
+        'segment unservable on all providers but its exact size is unknown (no locked part grid); cannot pad'
       );
       return undefined;
     }
-    return this.onHole(idx, bytes) === 'pad' ? bytes : undefined;
+    return this.onHole(idx, bytes, kind) === 'pad' ? bytes : undefined;
   }
 
   protected transformChunk(idx: number, chunk: Buffer): Buffer | null {

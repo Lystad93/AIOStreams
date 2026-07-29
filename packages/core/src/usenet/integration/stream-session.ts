@@ -5,6 +5,7 @@ import { DebridError } from '../../debrid/base.js';
 import {
   ArticleNotFoundError,
   NotStreamableError,
+  definitiveLossKind,
   deserializeArchiveLayout,
   serializeArchiveLayout,
   hasPendingFragments,
@@ -130,9 +131,9 @@ function isStreamFailing(key: string): boolean {
   return true;
 }
 
-/** Whether an error is a definitive "dead on every provider" verdict. */
+/** Whether an error is a definitive "unservable by every provider" verdict. */
 function isDefinitiveMiss(err: unknown): boolean {
-  return err instanceof ArticleNotFoundError && err.allProviders;
+  return definitiveLossKind(err) !== undefined;
 }
 
 const sessionEvictionTimer = setInterval(() => {
@@ -242,6 +243,10 @@ const HOLE_PATCH_DEBOUNCE_MS = 2_000;
  * no exact segment mapping); their persisted rows come from the census
  * shadow instead, so archive replays re-discover pads but the entry status
  * stays honest either way.
+ *
+ * Undecodable spans count toward the caps like any other damage but are never
+ * persisted: a 430 means the article is gone, whereas a corrupt copy may well
+ * decode on a provider added later.
  */
 function holeHooksFor(
   hash: string,
@@ -253,9 +258,16 @@ function holeHooksFor(
   // before its zeros reach the serving transform.
   const holeBytes = new HoleByteMap();
   // Seed with every persisted hole (idempotent adds keep replays stable).
+  // `acc` drives the caps and the replay pre-pad set, so it holds damage of
+  // both kinds; `persistable` is the subset written back to the entry.
   const acc = new HoleAccumulator();
+  const persistable = new HoleAccumulator();
   for (const f of entry?.files ?? []) {
-    if (f.holes) acc.load(deserializeHoles(f.holes));
+    if (f.holes) {
+      const runs = deserializeHoles(f.holes);
+      acc.load(runs);
+      persistable.load(runs);
+    }
   }
   const selector = decoded.innerPath
     ? { path: decoded.innerPath }
@@ -272,6 +284,7 @@ function holeHooksFor(
   let windowRunEnd = -1;
   let paddedBytesTotal = 0;
   let degradedMarked = entry?.status === 'degraded';
+  let sawUndecodable = false;
 
   const markDegraded = (): void => {
     if (degradedMarked) return;
@@ -290,7 +303,7 @@ function holeHooksFor(
       UsenetLibraryRepository.updateFileHoles(
         hash,
         selector,
-        serializeHoles(acc.runsForFiles(new Set([nzbFileIndex])))
+        serializeHoles(persistable.runsForFiles(new Set([nzbFileIndex])))
       ).catch((err) =>
         logger.debug(
           { hash, err: (err as Error)?.message },
@@ -304,16 +317,25 @@ function holeHooksFor(
 
   const fail = (info: HoleInfo, why: string): HoleDecision => {
     logger.warn(
-      { hash, nzbFileIndex: info.nzbFileIndex, why },
+      { hash, nzbFileIndex: info.nzbFileIndex, why, kind: info.kind },
       'playback hole exceeds padding caps; failing entry'
     );
+    const [reason, code] = sawUndecodable
+      ? [
+          'Too many articles unreadable on every provider to play',
+          'undecodable_on_providers',
+        ]
+      : [
+          'Too many articles missing on every provider to play',
+          'missing_on_providers',
+        ];
     UsenetLibraryRepository.markFailed(
       hash,
-      'Too many articles missing on every provider to play',
+      reason,
       decoded.filename,
-      'missing_on_providers'
+      code
     ).catch(() => {});
-    // Pad caps only trip on holes confirmed missing on every provider.
+    // Pad caps only trip on damage confirmed against every provider.
     markReleaseDead(decoded.releaseKey, nzbContentKey(hash));
     // Drop the warm session so a player retry re-opens fresh and sees the
     // failed entry.
@@ -329,6 +351,7 @@ function holeHooksFor(
   const hooks: HoleHooks = {
     onHole(info: HoleInfo): HoleDecision {
       paddedBytesTotal += info.bytes;
+      if (info.kind === 'undecodable') sawUndecodable = true;
       if (
         targetBytes > 0 &&
         paddedBytesTotal > MAX_PAD_FILE_BYTES_RATIO * targetBytes
@@ -340,13 +363,16 @@ function holeHooksFor(
         acc.add(info.nzbFileIndex, info.segmentIndex);
         const run = acc.runAt(info.nzbFileIndex, info.segmentIndex);
         if ((run?.count ?? 1) > MAX_PAD_RUN_SEGMENTS) {
-          return fail(info, 'consecutive missing segments');
+          return fail(info, 'consecutive unservable segments');
         }
         if (acc.total > MAX_PAD_TOTAL_SEGMENTS) {
-          return fail(info, 'cumulative missing segments');
+          return fail(info, 'cumulative unservable segments');
         }
         markDegraded();
-        persistHoles(info.nzbFileIndex);
+        if (info.kind === 'missing') {
+          persistable.add(info.nzbFileIndex, info.segmentIndex);
+          persistHoles(info.nzbFileIndex);
+        }
         registerHoleBytes(info);
         return 'pad';
       }

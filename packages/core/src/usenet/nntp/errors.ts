@@ -1,3 +1,6 @@
+import type { HoleKind } from '../holes.js';
+import { YencDecodeError } from '../pool/yenc.js';
+
 /**
  * Error taxonomy for the NNTP/usenet engine. The failover and service layers
  * branch on these.
@@ -71,6 +74,16 @@ export class ArticleNotFoundError extends Error {
     if (Error.captureStackTrace)
       Error.captureStackTrace(this, ArticleNotFoundError);
   }
+}
+
+/**
+ * Whether an error is a definitive "no provider will give us these bytes"
+ * verdict, and of which kind.
+ */
+export function definitiveLossKind(err: unknown): HoleKind | undefined {
+  if (err instanceof ArticleNotFoundError && err.allProviders) return 'missing';
+  if (err instanceof YencDecodeError && err.terminal) return 'undecodable';
+  return undefined;
 }
 
 /**

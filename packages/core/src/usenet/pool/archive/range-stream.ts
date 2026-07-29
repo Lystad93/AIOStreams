@@ -1,6 +1,6 @@
 import { createLogger } from '../../../logging/logger.js';
 import { OrderedParallelStream } from '../ordered-parallel-stream.js';
-import type { HoleDecision } from '../../holes.js';
+import type { HoleDecision, HoleKind } from '../../holes.js';
 
 const logger = createLogger('usenet/archive-range');
 
@@ -28,15 +28,16 @@ export interface ParallelRangeStreamOptions {
   /** Soft cap on buffered (fetched-but-not-yet-emitted) bytes (read-ahead). */
   maxBufferedBytes: number;
   /**
-   * Decision hook for a window whose read died on an all-providers 430:
-   * `pad` zero-fills the window and keeps streaming, `fail` destroys the
-   * stream (legacy behaviour, also used when the hook is absent). Window
+   * Decision hook for a window whose read died on a definitive all-providers
+   * verdict: `pad` zero-fills the window and keeps streaming, `fail` destroys
+   * the stream (legacy behaviour, also used when the hook is absent). Window
    * geometry is byte-exact, so a pad preserves every downstream offset by
    * construction. Offsets are archive-LOGICAL (post-decrypt/assembly) bytes.
    */
   onHole?: (info: {
     windowOffset: number;
     windowLength: number;
+    kind: HoleKind;
   }) => HoleDecision;
 }
 
@@ -126,12 +127,16 @@ export class ParallelRangeStream extends OrderedParallelStream {
    * preserves every downstream offset; pad-vs-fail policy (and caps
    * accounting) lives in the owner's hook.
    */
-  protected override tryPadHole(idx: number): number | undefined {
+  protected override tryPadHole(
+    idx: number,
+    kind: HoleKind
+  ): number | undefined {
     if (!this.onHole) return undefined;
     const len = this.windowLength(idx);
     const decision = this.onHole({
       windowOffset: this.windowOffset(idx),
       windowLength: len,
+      kind,
     });
     return decision === 'pad' ? len : undefined;
   }
