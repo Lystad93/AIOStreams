@@ -102,7 +102,7 @@ async function saveLocalNzb(hash: string, xml: string | Buffer): Promise<void> {
  */
 const PARSED_NZB_TTL_MS = 5 * 60_000;
 const PARSED_NZB_MAX_ENTRIES = 8;
-const PARSED_NZB_MAX_TOTAL_SEGMENTS = 600_000;
+const PARSED_NZB_MAX_TOTAL_SEGMENTS = 150_000;
 const PARSED_NZB_MAX_ALIASES = 64;
 const parsedNzbCache = new Map<
   string,
@@ -347,7 +347,7 @@ async function failImport(
   return new DebridError(reason, {
     statusCode: 404,
     statusText: 'Not Found',
-    code: 'NO_MATCHING_FILE',
+    code: 'DOWNLOAD_FAILED',
     headers: {},
     body,
     type: 'api_error',
@@ -998,7 +998,9 @@ export async function addUsenetNzb(opts: {
  */
 export async function mintUsenetLibraryToken(
   nzbHash: string,
-  fileSel?: string
+  fileSel?: string,
+  /** Dashboard user the resulting stream is attributed to. */
+  owner?: string
 ): Promise<{ token: string; filename: string } | undefined> {
   const entry = (await UsenetLibraryRepository.getResolved(nzbHash))?.entry;
   if (!entry?.nzbUrl) return undefined;
@@ -1028,6 +1030,7 @@ export async function mintUsenetLibraryToken(
     fileIndex: file.index,
     innerPath: file.path,
     filename,
+    owner,
   });
   return { token, filename };
 }

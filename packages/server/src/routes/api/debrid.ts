@@ -21,7 +21,7 @@ import {
   maskSensitiveInfo,
 } from '@aiostreams/core';
 import { ZodError } from 'zod';
-import { StaticFiles } from '../../app.js';
+import { StaticFiles, mapDebridErrorToStaticFile } from '../../app.js';
 import { corsMiddleware } from '../../middlewares/cors.js';
 const router: Router = Router();
 const logger = createLogger('server');
@@ -43,32 +43,6 @@ interface PlaybackParams {
   fileInfo: string;
   metadataId: string;
   filename: string;
-}
-
-/** Map a DebridError code to the static fallback video served to the player. */
-function mapDebridErrorToStaticFile(code: string | undefined): string {
-  switch (code) {
-    case 'UNAVAILABLE_FOR_LEGAL_REASONS':
-      return StaticFiles.UNAVAILABLE_FOR_LEGAL_REASONS;
-    case 'STORE_LIMIT_EXCEEDED':
-      return StaticFiles.STORE_LIMIT_EXCEEDED;
-    case 'PAYMENT_REQUIRED':
-      return StaticFiles.PAYMENT_REQUIRED;
-    case 'TOO_MANY_REQUESTS':
-      return StaticFiles.TOO_MANY_REQUESTS;
-    case 'FORBIDDEN':
-      return StaticFiles.FORBIDDEN;
-    case 'UNAUTHORIZED':
-      return StaticFiles.UNAUTHORIZED;
-    case 'UNPROCESSABLE_ENTITY':
-    case 'UNSUPPORTED_MEDIA_TYPE':
-    case 'STORE_MAGNET_INVALID':
-      return StaticFiles.DOWNLOAD_FAILED;
-    case 'NO_MATCHING_FILE':
-      return StaticFiles.NO_MATCHING_FILE;
-    default:
-      return StaticFiles.INTERNAL_SERVER_ERROR;
-  }
 }
 
 router.get(

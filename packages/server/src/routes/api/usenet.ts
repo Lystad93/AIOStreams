@@ -5,6 +5,7 @@ import {
   openNativeUsenetStream,
   DebridError,
 } from '@aiostreams/core';
+import { mapDebridErrorToStaticFile } from '../../app.js';
 import { corsMiddleware } from '../../middlewares/cors.js';
 
 const logger = createLogger('server:usenet');
@@ -83,6 +84,7 @@ router.get(
         start: requested?.start,
         end: requested?.endExclusive,
         signal: controller.signal,
+        clientIp: req.requestIp || req.ip || req.socket.remoteAddress,
       });
 
       const { size, start, end, stream, filename, etag, lastModified } = opened;
@@ -142,8 +144,13 @@ router.get(
         return;
       }
 
+      // A clean FIN is invisible to a player whose buffer is full.
       stream.once('error', (err: NodeJS.ErrnoException) => {
-        if (err?.code === 'USENET_STREAM_REAPED' && !socket.destroyed) {
+        if (
+          (err?.code === 'USENET_STREAM_REAPED' ||
+            err?.code === 'STREAM_STOPPED') &&
+          !socket.destroyed
+        ) {
           socket.resetAndDestroy();
         }
       });
@@ -160,7 +167,8 @@ router.get(
         code === 'EPIPE' ||
         code === 'ERR_STREAM_DESTROYED' ||
         code === 'ABORT_ERR' ||
-        code === 'USENET_STREAM_REAPED';
+        code === 'USENET_STREAM_REAPED' ||
+        code === 'STREAM_STOPPED';
 
       if (isClientDisconnect) {
         logger.debug({ code }, 'client disconnected from usenet stream');
@@ -174,10 +182,18 @@ router.get(
       }
 
       if (err instanceof DebridError) {
-        res.status(err.statusCode || 502).json({
-          success: false,
-          detail: err.message,
-        });
+        logger.warn(
+          { err: err.message, code: err.code, status: err.statusCode },
+          'usenet stream failed before any bytes were sent'
+        );
+        if (req.query.download !== undefined) {
+          res.status(err.statusCode || 502).json({
+            success: false,
+            detail: err.message,
+          });
+        } else {
+          res.redirect(302, `/static/${mapDebridErrorToStaticFile(err.code)}`);
+        }
         return;
       }
       next(err);

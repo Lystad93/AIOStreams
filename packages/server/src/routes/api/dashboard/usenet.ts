@@ -5,7 +5,6 @@ import {
   formatZodError,
   getUsenetStatsOverview,
   getUsenetLiveStats,
-  killUsenetStream,
   getUsenetProviders,
   saveUsenetProviders,
   getUsenetSettings,
@@ -29,12 +28,12 @@ import {
   type UsenetLibrarySortDir,
 } from '@aiostreams/core';
 import { ZodError } from 'zod';
-import { createResponse } from '../../utils/responses.js';
+import { createResponse } from '../../../utils/responses.js';
 import {
   nzbUpload,
   pickUploadedFile,
   isFileTooLargeError,
-} from '../../middlewares/upload.js';
+} from '../../../middlewares/upload.js';
 
 const router: Router = Router();
 const logger = createLogger('dashboard:usenet');
@@ -123,26 +122,6 @@ router.get('/live/stream', (req, res) => {
     clearInterval(hb);
     res.end();
   });
-});
-
-// DELETE /dashboard/usenet/streams/:id — force-stop one live read stream.
-router.delete('/streams/:id', (req, res, next) => {
-  try {
-    if (!killUsenetStream(req.params.id)) {
-      return res.status(404).json(
-        createResponse({
-          success: false,
-          error: { code: 'NOT_FOUND', message: 'stream not found' },
-        })
-      );
-    }
-    logger.info({ id: req.params.id }, 'stream stopped from the dashboard');
-    res
-      .status(200)
-      .json(createResponse({ success: true, data: { stopped: true } }));
-  } catch (err) {
-    next(err);
-  }
 });
 
 // GET /dashboard/usenet/providers — provider list with passwords masked.
@@ -533,7 +512,10 @@ router.post('/library/requeue', async (req, res, next) => {
 // GET /dashboard/usenet/library/:hash/play/:fileSel? — minted stream URL.
 // GET /dashboard/usenet/library/:hash/download/:fileSel? — same, as attachment.
 async function mintAndRespond(
-  req: { params: { hash: string; fileSel?: string } },
+  req: {
+    params: { hash: string; fileSel?: string };
+    user?: { username?: string };
+  },
   res: import('express').Response,
   next: import('express').NextFunction,
   download: boolean
@@ -541,7 +523,8 @@ async function mintAndRespond(
   try {
     const minted = await mintUsenetLibraryToken(
       req.params.hash,
-      req.params.fileSel
+      req.params.fileSel,
+      username(req)
     );
     if (!minted) {
       res.status(404).json(

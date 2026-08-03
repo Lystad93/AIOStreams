@@ -1,68 +1,210 @@
 import type { IconType } from 'react-icons';
 import {
+  BiBlock,
+  BiBox,
   BiCog,
   BiData,
-  BiNetworkChart,
-  BiListUl,
-  BiServer,
-  BiKey,
-  BiBox,
-  BiTachometer,
-  BiImage,
-  BiTask,
-  BiPalette,
+  BiGroup,
   BiInfoCircle,
-  BiFile,
+  BiListUl,
+  BiNetworkChart,
+  BiPalette,
+  BiPlayCircle,
+  BiPlug,
+  BiSitemap,
+  BiTachometer,
+  BiTransferAlt,
+  BiUserCheck,
 } from 'react-icons/bi';
 
 /**
- * Curated tab manifest. The schema-walker still generates the *fields* inside
- * each tab automatically — this only controls the tab list / labels / order /
- * grouping. Sections not listed here fall back to a title-cased label at the
- * end. Tiny sections can be folded into a parent tab via `foldInto`.
+ * Curated tab manifest. The schema-walker still generates the fields inside
+ * each tab; this only controls the tab list, labels, order and grouping.
+ * Sections not listed here fall back to a catch-all group.
+ *
+ * Two rules keep it navigable: every tab gets a distinct icon, since that is
+ * all the collapsed rail shows; and a tab mirroring a dashboard page reuses
+ * that page's icon and name. `order` steps by 10 to leave room between tabs.
  */
 export interface TabDef {
-  /** Config section key (first path segment), or a synthetic id when folding. */
+  /** Tab id. Usually a config section key; synthetic when `sections` is set. */
   section: string;
   label: string;
   icon: IconType;
   group: string;
   order: number;
+  /**
+   * Dotted key prefixes this tab claims. A prefix may be a whole section
+   * (`services`) or a subsection (`proxy.force`), so a section can be split
+   * across tabs; the longest match wins. See {@link cardPath} for headings.
+   */
+  sections?: string[];
 }
 
 export const TAB_MANIFEST: Record<string, Omit<TabDef, 'section'>> = {
-  api: { label: 'General', icon: BiCog, group: 'Core', order: 1 },
-  branding: { label: 'Branding', icon: BiPalette, group: 'Core', order: 2 },
-  templates: { label: 'Templates', icon: BiFile, group: 'Core', order: 3 },
-  metadata: { label: 'Metadata', icon: BiInfoCircle, group: 'Core', order: 4 },
-  logging: { label: 'Logging', icon: BiListUl, group: 'Core', order: 5 },
-  http: { label: 'HTTP', icon: BiNetworkChart, group: 'Network', order: 6 },
-  proxy: { label: 'Proxy', icon: BiNetworkChart, group: 'Network', order: 7 },
+  // --- the instance itself --------------------------------------------------
+  general: {
+    label: 'General',
+    icon: BiCog,
+    group: 'General',
+    order: 10,
+    // Templates are part of instance setup, not a topic of their own.
+    sections: ['api', 'templates'],
+  },
+  branding: { label: 'Branding', icon: BiPalette, group: 'General', order: 20 },
+  logging: { label: 'Logging', icon: BiListUl, group: 'General', order: 30 },
+  retention: {
+    label: 'Data & Retention',
+    icon: BiData,
+    group: 'General',
+    order: 40,
+    // Both sides of how long things are kept.
+    sections: ['tasks', 'analytics'],
+  },
+
+  // --- what AIOStreams itself does ------------------------------------------
+  // Wrapping upstream addons, plus what that leans on: metadata drives built-in
+  // search and filtering, blocklists drive what gets through.
+  presets: { label: 'Presets', icon: BiBox, group: 'Core', order: 110 },
+  builtins: { label: 'Built-ins', icon: BiPlug, group: 'Core', order: 120 },
+  resources: {
+    label: 'Addon Resources',
+    icon: BiSitemap,
+    group: 'Core',
+    order: 130,
+  },
+  metadata: {
+    label: 'Metadata',
+    icon: BiInfoCircle,
+    group: 'Core',
+    order: 140,
+    // Poster handling is metadata presentation, and is a single setting.
+    sections: ['metadata', 'poster'],
+  },
+  releaseBlocklist: {
+    label: 'Blocklists',
+    icon: BiBlock,
+    group: 'Core',
+    order: 150,
+  },
+
+  // --- what lands in each user's configuration ------------------------------
+  userDefaults: {
+    label: 'User Defaults',
+    icon: BiUserCheck,
+    group: 'Users',
+    order: 210,
+    // The credentials and proxy an operator pre-fills or forces into every
+    // user's config. The rest of `proxy` is instance behaviour.
+    sections: ['services', 'proxy.default', 'proxy.force'],
+  },
+  userLimits: {
+    label: 'User Limits',
+    icon: BiGroup,
+    group: 'Users',
+    order: 220,
+  },
   rateLimits: {
     label: 'Rate Limits',
     icon: BiTachometer,
-    group: 'Network',
-    order: 9,
+    group: 'Users',
+    order: 230,
+    // Recursion detection is a request-rate guard, so it sits with the other
+    // throttles.
+    sections: ['rateLimits', 'recursion'],
   },
-  services: { label: 'Services', icon: BiKey, group: 'Content', order: 10 },
-  presets: { label: 'Presets', icon: BiBox, group: 'Content', order: 11 },
-  builtins: { label: 'Built-ins', icon: BiBox, group: 'Content', order: 12 },
-  poster: { label: 'Posters', icon: BiImage, group: 'Content', order: 13 },
-  resources: {
-    label: 'Resources',
-    icon: BiServer,
-    group: 'Content',
-    order: 14,
+
+  // --- traffic in and out ---------------------------------------------------
+  http: {
+    label: 'Outbound Requests',
+    icon: BiNetworkChart,
+    group: 'Traffic',
+    order: 310,
   },
-  userLimits: { label: 'User Limits', icon: BiKey, group: 'Limits', order: 15 },
-  recursion: {
-    label: 'Recursion',
-    icon: BiTachometer,
-    group: 'Limits',
-    order: 16,
+  proxy: {
+    label: 'Proxy',
+    icon: BiTransferAlt,
+    group: 'Traffic',
+    order: 320,
+    // What's left of `proxy` once the per-user defaults move out.
+    sections: ['proxy.encryption', 'proxy.ip'],
   },
-  tasks: { label: 'Tasks', icon: BiTask, group: 'Limits', order: 17 },
+  streams: {
+    label: 'Streams',
+    icon: BiPlayCircle,
+    group: 'Traffic',
+    order: 330,
+  },
 };
+
+/** Claimed key prefix → tab id. */
+const PREFIX_TO_TAB = new Map<string, string>(
+  Object.entries(TAB_MANIFEST).flatMap(([id, def]) =>
+    (def.sections ?? [id]).map((prefix) => [prefix, id] as [string, string])
+  )
+);
+
+/**
+ * Which tab renders a setting. Longest claimed prefix wins, so
+ * `proxy.force.url` can land elsewhere than `proxy.encryption.*`. Falls back to
+ * the section, so a new one gets a tab rather than vanishing.
+ */
+export function tabIdForKey(key: string): string {
+  const parts = key.split('.');
+  for (let i = parts.length - 1; i >= 1; i--) {
+    const hit = PREFIX_TO_TAB.get(parts.slice(0, i).join('.'));
+    if (hit) return hit;
+  }
+  return parts[0];
+}
+
+/**
+ * Resolve a `?tab=` value, which may name a config section from an older link
+ * rather than a tab.
+ */
+export function tabIdForSection(section: string): string {
+  return TAB_MANIFEST[section]
+    ? section
+    : (PREFIX_TO_TAB.get(section) ?? section);
+}
+
+/** How many leading path segments every prefix on a tab has in common. */
+function sharedDepth(prefixes: string[]): number {
+  if (prefixes.length === 0) return 0;
+  const first = prefixes[0].split('.');
+  let n = 0;
+  while (
+    n < first.length &&
+    prefixes.every((p) => p.split('.')[n] === first[n])
+  ) {
+    n++;
+  }
+  return n;
+}
+
+/**
+ * Card heading path for a setting: the key minus its leaf, minus whatever every
+ * prefix on the tab shares. So a tab spanning two sections names them apart,
+ * while one carving up a single section doesn't repeat it.
+ */
+export function cardPath(tabId: string, key: string): string {
+  const prefixes = TAB_MANIFEST[tabId]?.sections;
+  const parts = key.split('.').slice(0, -1);
+  const drop = prefixes ? sharedDepth(prefixes) : 1;
+  return parts.slice(drop).join('.');
+}
+
+/** Position of a setting's prefix in its tab's declared order. */
+export function foldRank(tabId: string, key: string): number {
+  const prefixes = TAB_MANIFEST[tabId]?.sections;
+  if (!prefixes) return 0;
+  const parts = key.split('.');
+  for (let i = parts.length - 1; i >= 1; i--) {
+    const idx = prefixes.indexOf(parts.slice(0, i).join('.'));
+    if (idx !== -1) return idx;
+  }
+  return prefixes.length;
+}
 
 const FALLBACK_ICON = BiData;
 
@@ -142,7 +284,7 @@ export function tabFor(section: string): Omit<TabDef, 'section'> {
       label: humanise(section),
       icon: FALLBACK_ICON,
       group: 'Other',
-      order: 999,
+      order: 9999,
     }
   );
 }

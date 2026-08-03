@@ -155,6 +155,8 @@ interface LiveStreamRecord {
   lastChunkAt: number;
   /** Smoothed download rate, bytes/second. */
   emaBytesPerSec: number;
+  /** Bytes seen since the rate last advanced. */
+  unratedBytes: number;
 }
 
 /**
@@ -229,6 +231,7 @@ export class StatsAccumulator {
       openedAt: now,
       lastChunkAt: now,
       emaBytesPerSec: 0,
+      unratedBytes: 0,
     });
     return id;
   }
@@ -240,10 +243,12 @@ export class StatsAccumulator {
     const now = Date.now();
     const dtMs = now - s.lastChunkAt;
     s.bytesServed += bytes;
+    s.unratedBytes += bytes;
     if (dtMs > 0) {
-      const instRate = (bytes / dtMs) * 1000;
+      const instRate = (s.unratedBytes / dtMs) * 1000;
       const w = Math.exp(-dtMs / STREAM_RATE_TAU_MS);
       s.emaBytesPerSec = s.emaBytesPerSec * w + instRate * (1 - w);
+      s.unratedBytes = 0;
     }
     s.lastChunkAt = now;
   }

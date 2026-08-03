@@ -18,6 +18,12 @@ export interface UsenetStreamToken {
   filename: string;
   /** Shareable release key (`wd1:`), when the indexer metadata allowed one. */
   releaseKey?: string;
+  /**
+   * Username the stream is attributed to, for stream accounting and limits.
+   * Absent on tokens minted before this existed; those streams are listed as
+   * unidentified and bypass per-user limits and bans.
+   */
+  owner?: string;
 }
 
 /**

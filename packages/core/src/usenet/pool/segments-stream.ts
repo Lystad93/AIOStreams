@@ -69,7 +69,7 @@ export class SegmentsStream extends OrderedParallelStream {
       totalTasks: opts.segments.length,
       maxConcurrency: maxWorkers,
       maxBufferedBytes: Math.max(1, opts.bufferSizeBytes),
-      slotCap: 4 * maxWorkers + 16,
+      slotCap: 2 * maxWorkers + 16,
       initialMaxSlot: 1 << 20,
       logger,
     });

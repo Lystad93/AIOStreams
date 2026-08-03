@@ -373,28 +373,40 @@ export const boolOrList = z.union([
   }),
 ]);
 
+const BYTE_MULTIPLIERS: Record<string, number> = {
+  b: 1,
+  kb: 1000,
+  mb: 1_000_000,
+  gb: 1_000_000_000,
+  tb: 1_000_000_000_000,
+};
+
+/**
+ * Parse a size string ("20MB", "1.5tb", "1024") to bytes. Returns null when the
+ * value is not a size, so callers can raise their own issue.
+ */
+export function parseByteSize(value: string): number | null {
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) return Number(trimmed);
+  const m = trimmed.match(/^(\d+(?:\.\d+)?)\s*([kmgt]?b)?$/i);
+  if (!m) return null;
+  return Math.floor(
+    Number(m[1]) * BYTE_MULTIPLIERS[(m[2] || 'b').toLowerCase()]
+  );
+}
+
 /**
  * A size value: integer bytes or a human-readable string like "20MB".
  */
 export const byteSize = z.union([
   z.number().int().nonnegative(),
   z.string().transform((value, ctx) => {
-    const trimmed = value.trim();
-    if (/^\d+$/.test(trimmed)) return Number(trimmed);
-    const m = trimmed.match(/^(\d+(?:\.\d+)?)\s*([kmg]?b)?$/i);
-    if (!m) {
+    const bytes = parseByteSize(value);
+    if (bytes === null) {
       ctx.addIssue({ code: 'custom', message: `Invalid size: "${value}"` });
       return z.NEVER;
     }
-    const n = Number(m[1]);
-    const unit = (m[2] || 'b').toLowerCase();
-    const mult: Record<string, number> = {
-      b: 1,
-      kb: 1000,
-      mb: 1_000_000,
-      gb: 1_000_000_000,
-    };
-    return Math.floor(n * mult[unit]);
+    return bytes;
   }),
 ]);
 

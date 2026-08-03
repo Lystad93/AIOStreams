@@ -109,10 +109,7 @@ export class SeaDexAddon extends BaseDebridAddon<SeaDexAddonConfig> {
           continue;
         }
 
-        const totalSize = torrent.files.reduce(
-          (sum, file) => sum + file.length,
-          0
-        );
+        const totalSize = torrent.size;
 
         const created = torrent.created ? new Date(torrent.created) : undefined;
         const age = created

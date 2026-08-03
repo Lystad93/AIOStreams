@@ -17,12 +17,45 @@ export interface SeaDexTorrent {
   dualAudio?: boolean;
   created?: string;
   isBest: boolean;
-  files: Array<{ length: number; name: string }>;
+  size: number;
 }
 
 interface SeaDexData {
   torrentsByAnilistId: Record<string, SeaDexTorrent[]>;
   lastUpdated: number;
+}
+
+/** Sum `length` over a raw SeaDex `files` array, tolerating malformed rows. */
+function sumFileLengths(files: unknown): number {
+  if (!Array.isArray(files)) return 0;
+  let total = 0;
+  for (const f of files) {
+    const len = (f as { length?: unknown })?.length;
+    if (typeof len === 'number' && Number.isFinite(len)) total += len;
+  }
+  return total;
+}
+
+// ensure size is present and files is not.
+function normaliseSeaDexData(raw: any): SeaDexData {
+  const src = (raw?.torrentsByAnilistId ?? {}) as Record<string, any[]>;
+  const torrentsByAnilistId: Record<string, SeaDexTorrent[]> = {};
+  for (const [anilistId, torrents] of Object.entries(src)) {
+    if (!Array.isArray(torrents)) continue;
+    torrentsByAnilistId[anilistId] = torrents.map((t) => ({
+      infoHash: typeof t?.infoHash === 'string' ? t.infoHash : '',
+      releaseGroup: t?.releaseGroup,
+      tracker: t?.tracker,
+      dualAudio: t?.dualAudio,
+      created: t?.created,
+      isBest: t?.isBest === true,
+      size: typeof t?.size === 'number' ? t.size : sumFileLengths(t?.files),
+    }));
+  }
+  return {
+    torrentsByAnilistId,
+    lastUpdated: typeof raw?.lastUpdated === 'number' ? raw.lastUpdated : 0,
+  };
 }
 
 export class SeaDexDataset extends BaseDataset {
@@ -55,7 +88,7 @@ export class SeaDexDataset extends BaseDataset {
   protected async reloadDataFromFile(): Promise<void> {
     try {
       const fileContent = await fs.readFile(this.DATA_PATH, 'utf-8');
-      this.data = JSON.parse(fileContent);
+      this.data = normaliseSeaDexData(JSON.parse(fileContent));
       logger.info(
         `Loaded SeaDex dataset with ${
           Object.keys(this.data.torrentsByAnilistId).length
@@ -150,7 +183,7 @@ export class SeaDexDataset extends BaseDataset {
                 infoHash: redacted ? '' : rawHash.toLowerCase(),
                 releaseGroup,
                 isBest: tr.isBest,
-                files: Array.isArray(tr.files) ? tr.files : [],
+                size: sumFileLengths(tr.files),
                 tracker: tr.tracker,
                 dualAudio: tr.dualAudio,
                 created: tr.created,

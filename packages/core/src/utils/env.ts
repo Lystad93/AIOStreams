@@ -161,31 +161,6 @@ const permissionsMap = makeExactValidator<Map<string, Set<string>>>((x) => {
   return map;
 });
 
-const connectionLimits = makeValidator((x) => {
-  if (typeof x !== 'string') {
-    throw new EnvError('Connection limits must be a string');
-  }
-  // comma separated list of username:limit where limit is a number
-  const limitMap: Map<string, number> = new Map();
-  x.split(',').forEach((x) => {
-    const [username, limitStr] = x.split(':');
-    if (!username || !limitStr) {
-      throw new EnvError(
-        'Connection limits must be a comma separated list of username:limit pairs'
-      );
-    }
-    const limit = Number(limitStr);
-    if (limit === -1)
-      if (Number.isNaN(limit) || limit < 0 || !Number.isInteger(limit)) {
-        throw new EnvError(
-          'Connection limit must be a positive integer or 0 for unlimited'
-        );
-      }
-    limitMap.set(username, limit);
-  });
-  return limitMap;
-});
-
 /**
  * Resolves the effective time value for a given service from a serviceTimeMap.
  * Checks for a service-specific entry first, then falls back to the wildcard `*`.
@@ -292,10 +267,6 @@ export const Env = cleanEnv(process.env, {
   AIOSTREAMS_AUTH_PROXY: commaSeparated({
     default: undefined,
     desc: 'Comma separated list of usernames allowed to use the built-in proxy. If not set, all authenticated users can use the proxy.',
-  }),
-  AIOSTREAMS_AUTH_CONNECTIONS_LIMIT: connectionLimits({
-    default: undefined,
-    desc: 'Connection limits for authenticated users',
   }),
   AIOSTREAMS_AUTH_PERMISSIONS: permissionsMap({
     default: new Map<string, Set<string>>(),

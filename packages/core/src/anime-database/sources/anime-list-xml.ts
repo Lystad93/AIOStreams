@@ -3,12 +3,11 @@
  * episode offsets, used to disambiguate which cour of a multi-season show a
  * given (season, episode) request belongs to.
  *
- * The dataset is XML, parsed via xml2js, and small enough (a few MB) to read
- * whole.
+ * Read one `<anime>` element at a time.
  */
 import path from 'path';
-import fs from 'fs/promises';
-import { parseXmlCompat } from '../../index.js';
+import { createReadStream } from 'fs';
+import { parseXmlElementCompat } from '../../utils/xml.js';
 import { config as appConfig } from '../../config/index.js';
 import {
   AnimeType,
@@ -60,6 +59,67 @@ function parseSeason(val: string | undefined): number | 'a' | null {
   return parseNum(val);
 }
 
+const CLOSE_TAG = '</anime>';
+/**
+ * `</anime-list>` must not match the element close, so the search string keeps
+ * its own `>`; `<anime-list>` likewise cannot match an element open because a
+ * name character follows `<anime` instead of whitespace or `>`.
+ */
+function findElementStart(buf: string, from: number): number {
+  let i = from;
+  for (;;) {
+    i = buf.indexOf('<anime', i);
+    if (i === -1) return -1;
+    const next = buf[i + 6];
+    if (next === undefined) return -1;
+    if (
+      next === '>' ||
+      next === ' ' ||
+      next === '\n' ||
+      next === '\r' ||
+      next === '\t'
+    ) {
+      return i;
+    }
+    i += 6;
+  }
+}
+
+/**
+ * Yield each `<anime>` element of the document, parsed on its own.
+ */
+async function* streamAnimeElements(
+  filePath: string
+): AsyncIterable<RawXmlAnime> {
+  const stream = createReadStream(filePath, {
+    encoding: 'utf8',
+    highWaterMark: 1 << 20,
+  });
+  let buf = '';
+  for await (const chunk of stream) {
+    buf += chunk;
+    let consumed = 0;
+    for (;;) {
+      const close = buf.indexOf(CLOSE_TAG, consumed);
+      if (close === -1) break;
+      const end = close + CLOSE_TAG.length;
+      const start = findElementStart(buf, consumed);
+      if (start === -1 || start > close) {
+        // Junk before the first element (the XML declaration and root open).
+        consumed = end;
+        continue;
+      }
+      const parsed = parseXmlElementCompat(buf.slice(start, end));
+      consumed = end;
+      const el = parsed?.anime;
+      if (el) yield el as RawXmlAnime;
+    }
+    // One slice per chunk rather than per element: with ~16k elements the
+    // per-element re-slice would dominate the parse.
+    if (consumed > 0) buf = buf.slice(consumed);
+  }
+}
+
 export const animeListXmlSource: AnimeSource = {
   id: 'anime-list-xml',
   name: 'Anime Lists XML',
@@ -69,12 +129,7 @@ export const animeListXmlSource: AnimeSource = {
     return appConfig.metadata.animeDb.refresh.animeList * 1000;
   },
   async *parse(filePath: string): AsyncIterable<SourceEntry> {
-    const text = await fs.readFile(filePath, 'utf8');
-    const parsed = parseXmlCompat(text);
-    const list = parsed?.['anime-list']?.anime;
-    if (!Array.isArray(list)) return;
-
-    for (const raw of list as RawXmlAnime[]) {
+    for await (const raw of streamAnimeElements(filePath)) {
       const attrs = raw.$;
       if (!attrs) continue;
       const anidbId = parseNum(attrs.anidbid);

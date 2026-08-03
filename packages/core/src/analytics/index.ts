@@ -242,6 +242,7 @@ function dayKey(ms: number): string {
  * raw events / daily rows past their retention settings.
  */
 export async function runRollup(): Promise<void> {
+  if (disabled()) return;
   const db = getDb();
   const now = Date.now();
   const dayMs = 86_400_000;
@@ -417,11 +418,24 @@ export function startAnalytics(): void {
       await runRollup();
     },
   });
-  // First rollup shortly after boot so the dashboard isn't empty.
-  setTimeout(
-    () => void TaskManager.runNow('analytics-rollup').catch(() => undefined),
-    30_000
-  ).unref?.();
+  setTimeout(() => {
+    void rollupIfDashboardEmpty().catch(() => undefined);
+  }, 30_000).unref?.();
+}
+
+/**
+ * Seed today's rollup at boot so a fresh instance's dashboard isn't empty.
+ * Conditional because the rollup aggregates every event of the day: run
+ * unconditionally, a restart loop starts one per boot until the pool is dry.
+ */
+async function rollupIfDashboardEmpty(): Promise<void> {
+  if (disabled()) return;
+  const today = dayKey(Date.now());
+  const existing = await getDb().maybeOne(
+    sql`SELECT 1 AS present FROM analytics_daily WHERE day = ${today} LIMIT 1`
+  );
+  if (existing) return;
+  await TaskManager.runNow('analytics-rollup');
 }
 
 /** Flush remaining events (called on graceful shutdown). */

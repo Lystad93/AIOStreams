@@ -183,6 +183,8 @@ function SettingsFieldControl({ k }: { k: SettingsKey }) {
           help={md(help)}
           disabled={disabled}
           min={k.ui.min}
+          max={k.ui.max}
+          step={k.ui.step}
         />
       );
     case 'enum':

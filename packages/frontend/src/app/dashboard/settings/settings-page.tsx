@@ -12,7 +12,14 @@ import { PageWrapper } from '@/components/shared/page-wrapper';
 import { Spinner } from '@/components/ui/loading-spinner';
 import { LuffyError } from '@/components/shared/luffy-error';
 import { useSettings, useSaveSettings, type SettingsKey } from './queries';
-import { tabFor, humanise } from './tabs.config';
+import {
+  cardPath,
+  foldRank,
+  humanise,
+  tabFor,
+  tabIdForKey,
+  tabIdForSection,
+} from './tabs.config';
 import {
   SettingsCard,
   SettingsNavCard,
@@ -41,24 +48,27 @@ interface TabModel {
 }
 
 function buildTabs(keys: SettingsKey[]): TabModel[] {
-  const bySection = new Map<string, SettingsKey[]>();
+  const byTab = new Map<string, SettingsKey[]>();
   for (const k of keys) {
-    const section = k.key.split('.')[0];
-    (bySection.get(section) ?? bySection.set(section, []).get(section)!).push(
-      k
-    );
+    const tabId = tabIdForKey(k.key);
+    (byTab.get(tabId) ?? byTab.set(tabId, []).get(tabId)!).push(k);
   }
   const tabs: TabModel[] = [];
-  for (const [section, sectionKeys] of bySection) {
-    const meta = tabFor(section);
+  for (const [tabId, tabKeys] of byTab) {
+    const meta = tabFor(tabId);
+    // Cards render in Map insertion order, i.e. schema-walk order, which says
+    // nothing about how two folded sections should sit relative to each other.
+    const ordered = meta.sections
+      ? [...tabKeys].sort(
+          (a, b) => foldRank(tabId, a.key) - foldRank(tabId, b.key)
+        )
+      : tabKeys;
     const groups = new Map<string, SettingsKey[]>();
-    for (const k of sectionKeys) {
-      const parts = k.key.split('.');
-      // parts[0] = section, last = leaf; middle = subsection path
-      const sub = parts.slice(1, -1).join('.');
+    for (const k of ordered) {
+      const sub = cardPath(tabId, k.key);
       (groups.get(sub) ?? groups.set(sub, []).get(sub)!).push(k);
     }
-    tabs.push({ section, ...meta, groups });
+    tabs.push({ section: tabId, ...meta, groups });
   }
   return tabs.sort(
     (a, b) => a.order - b.order || a.label.localeCompare(b.label)
@@ -179,7 +189,7 @@ function TabForm({
             <div className="flex items-start justify-between gap-2">
               <SettingsPageHeader
                 title={tab.label}
-                description={`${humanise(tab.section)} configuration`}
+                description={`${tab.label} configuration`}
                 icon={tab.icon}
               />
               <div className="pt-1">
@@ -224,8 +234,10 @@ export function SettingsPage() {
   const [tab, setTab] = React.useState<string>('');
   React.useEffect(() => {
     if (!tabs.length) return;
-    if (search.tab && tabs.some((t) => t.section === search.tab))
-      setTab(search.tab);
+    // Older links carry a config section rather than a tab id.
+    const requested = search.tab ? tabIdForSection(search.tab) : undefined;
+    if (requested && tabs.some((t) => t.section === requested))
+      setTab(requested);
     else if (!tab) setTab(tabs[0].section);
   }, [tabs, search.tab]); // eslint-disable-line react-hooks/exhaustive-deps
 

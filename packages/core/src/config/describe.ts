@@ -46,13 +46,23 @@ export interface SettingsUiHint {
   /** For `enum` - the allowed string values. */
   options?: string[];
   /** For `map` - the value cell kind. */
-  mapValueKind?: 'string' | 'number' | 'boolean' | 'numberOrBool' | 'json';
+  mapValueKind?:
+    | 'string'
+    | 'number'
+    | 'boolean'
+    | 'numberOrBool'
+    | 'size'
+    | 'json';
   /** For `map` - column ratio (default `equal`). */
   mapWidth?: 'equal' | 'wide-key' | 'wide-value';
   /** For `string` - render as textarea. */
   multiline?: boolean;
   /** For `number` - minimum allowed value (default: 0). */
   min?: number;
+  /** For `number` - maximum allowed value (default: unbounded). */
+  max?: number;
+  /** For `number` - step size (default: 1). */
+  step?: number;
   /** Hidden from the generic settings page (managed by a bespoke editor). */
   hidden?: boolean;
 }
@@ -240,8 +250,11 @@ export function describeSettings(): Record<string, SettingsUiHint> {
           : classify(schema as AnyZod);
       if (ui?.kind) hint.kind = ui.kind;
       if (ui?.multiline) hint.multiline = true;
+      if (ui?.mapValueKind) hint.mapValueKind = ui.mapValueKind;
       if (ui?.mapWidth) hint.mapWidth = ui.mapWidth;
       if (ui?.min !== undefined) hint.min = ui.min;
+      if (ui?.max !== undefined) hint.max = ui.max;
+      if (ui?.step !== undefined) hint.step = ui.step;
       if (ui?.options) hint.options = [...ui.options];
       if (ui?.hidden) hint.hidden = true;
       out[key] = hint;

@@ -25,12 +25,17 @@ import {
   startAnalytics,
   stopAnalytics,
   TaskManager,
+  instanceId,
   drainUsenetMetrics,
   pruneUsenetMetrics,
   requeueInterruptedInspects,
   flushAllDiskCaches,
   ReleaseBlocklistRemoteService,
   ReleaseBlocklistPublishService,
+  flushStreamSessions,
+  pruneStreamSessions,
+  recoverStreamSessions,
+  streamRegistry,
 } from '@aiostreams/core';
 
 const logger = createLogger('server');
@@ -159,6 +164,44 @@ function registerUsenetTasks() {
   });
 }
 
+function registerStreamTasks() {
+  TaskManager.register({
+    id: 'streams-flush',
+    label: 'Flush stream sessions',
+    description:
+      'Writes live stream sessions and their served bytes to the database, ' +
+      'ends sessions that have gone quiet, and applies bandwidth limits, ' +
+      'bans and stop requests raised on another instance.',
+    category: 'data-sync',
+    kind: 'scheduled',
+    intervalMs: 5_000,
+    enabled: true,
+    destructive: false,
+    multiReplica: 'all',
+    run: async () => {
+      const { written, ended } = await flushStreamSessions();
+      return { ok: true, message: `wrote ${written} sessions, ended ${ended}` };
+    },
+  });
+  TaskManager.register({
+    id: 'streams-prune',
+    label: 'Prune stream history',
+    description:
+      'Deletes finished stream sessions past the retention window, expired ' +
+      'bans, and bandwidth rollups older than the retention window.',
+    category: 'data-sync',
+    kind: 'scheduled',
+    intervalMs: 24 * 60 * 60_000,
+    enabled: true,
+    destructive: false,
+    multiReplica: 'single',
+    run: async () => {
+      const n = await pruneStreamSessions();
+      return { ok: true, message: `pruned ${n} rows` };
+    },
+  });
+}
+
 function registerSubtitleTasks() {
   TaskManager.register({
     id: 'prune-subtitle-jobs',
@@ -276,21 +319,29 @@ async function initialiseAuth() {
 async function start() {
   try {
     await initialiseDatabase();
+    // Before anything registers a task: it is the identity runs are recorded
+    // under.
+    TaskManager.setInstanceId(instanceId());
     await reconcileSubtitleJobs();
     await initialiseTemplates();
     logStartupInfo();
     await initialiseRedis();
-    initialiseAnimeDatabase();
-    initialiseSeaDexDataset();
-    initialiseSceneMappingDataset();
-    initialiseIdMappingDataset();
+    await initialiseAnimeDatabase();
+    await initialiseSeaDexDataset();
+    await initialiseSceneMappingDataset();
+    await initialiseIdMappingDataset();
     RegexAccess.initialise();
     SelAccess.initialise();
     await initialiseProwlarr();
     registerPruneTask();
     registerCacheTasks();
     registerUsenetTasks();
+    registerStreamTasks();
     registerReleaseBlocklistTasks();
+    // Otherwise sessions from the last run stay active forever.
+    await recoverStreamSessions().catch((error) =>
+      logger.warn('Failed to recover orphaned stream sessions:', error)
+    );
     registerSubtitleTasks();
     void requeueInterruptedInspects();
     await initialiseAuth();
@@ -313,6 +364,9 @@ async function start() {
 
 async function shutdown() {
   TaskManager.stopAll();
+  // Write live sessions out so the next boot doesn't reclaim them as stale.
+  streamRegistry.closeAll('stale');
+  await flushStreamSessions().catch(() => undefined);
   await stopAnalytics().catch(() => undefined);
   await flushAllDiskCaches().catch(() => undefined);
   await Cache.close();

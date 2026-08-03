@@ -80,6 +80,7 @@ const SERVICE_LOGO_MAP: Record<ServiceId, string> = {
   altmount:
     'https://raw.githubusercontent.com/javi11/altmount/refs/heads/main/docs/static/img/logo.png',
   aiostreams: '/logo.png',
+  torrin: 'https://torrin.app/favicon.png',
 };
 
 function ServiceLogo({

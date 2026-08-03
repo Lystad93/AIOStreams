@@ -31,6 +31,47 @@ type MapValueKind = NonNullable<SettingsUiHint['mapValueKind']>;
 export type KvWidth = 'equal' | 'wide-key' | 'wide-value';
 
 /**
+ * Byte-size cell for `KeyValueListField`. Same contract as {@link SizeField};
+ * the text is local so a half-typed "5G" isn't reformatted mid-keystroke.
+ */
+function SizeCell({
+  value,
+  disabled,
+  onValueChange,
+}: {
+  value: unknown;
+  disabled?: boolean;
+  onValueChange: (bytes: number) => void;
+}) {
+  const numeric = typeof value === 'number' ? value : Number(value ?? 0) || 0;
+  const [text, setText] = React.useState(() => formatSize(numeric));
+  const [err, setErr] = React.useState(false);
+
+  React.useEffect(() => {
+    if (parseSizeToBytes(text) !== numeric) {
+      setText(formatSize(numeric));
+      setErr(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [numeric]);
+
+  return (
+    <TextInput
+      value={text}
+      disabled={disabled}
+      placeholder='e.g. "500GB"'
+      error={err ? 'Invalid size' : undefined}
+      onValueChange={(v) => {
+        setText(v);
+        const bytes = parseSizeToBytes(v);
+        setErr(bytes == null);
+        if (bytes != null) onValueChange(bytes);
+      }}
+    />
+  );
+}
+
+/**
  * `Field.KeyValueList` — generic editor for the map / list helper schemas
  * (cacheTtlMap, userAgentMap, addonProxyConfigMap, …). One reusable custom
  * field, schema-driven via `valueKind`. Round-trips the exact object/array
@@ -93,7 +134,11 @@ export function KeyValueListField({
   };
 
   const defaultVal = (): unknown =>
-    valueKind === 'boolean' ? false : valueKind === 'number' ? 0 : '';
+    valueKind === 'boolean'
+      ? false
+      : valueKind === 'number' || valueKind === 'size'
+        ? 0
+        : '';
 
   const keyClass =
     width === 'wide-key'
@@ -128,6 +173,12 @@ export function KeyValueListField({
               {valueKind === 'boolean' ? (
                 <Switch
                   value={Boolean(v)}
+                  disabled={disabled}
+                  onValueChange={(nv) => setRow(i, k, nv)}
+                />
+              ) : valueKind === 'size' ? (
+                <SizeCell
+                  value={v}
                   disabled={disabled}
                   onValueChange={(nv) => setRow(i, k, nv)}
                 />
@@ -443,6 +494,7 @@ export function MultilineStringField({
 }
 
 const SIZE_UNITS: Array<[string, number]> = [
+  ['TB', 1_000_000_000_000],
   ['GB', 1_000_000_000],
   ['MB', 1_000_000],
   ['KB', 1_000],
@@ -465,7 +517,7 @@ function parseSizeToBytes(text: string): number | null {
   const t = text.trim();
   if (t === '') return null;
   if (/^\d+$/.test(t)) return Number(t);
-  const m = t.match(/^(\d+(?:\.\d+)?)\s*([kmg]?b)?$/i);
+  const m = t.match(/^(\d+(?:\.\d+)?)\s*([kmgt]?b)?$/i);
   if (!m) return null;
   const n = Number(m[1]);
   const unit = (m[2] || 'b').toLowerCase();
@@ -474,6 +526,7 @@ function parseSizeToBytes(text: string): number | null {
     kb: 1_000,
     mb: 1_000_000,
     gb: 1_000_000_000,
+    tb: 1_000_000_000_000,
   };
   return Math.floor(n * mult[unit]);
 }

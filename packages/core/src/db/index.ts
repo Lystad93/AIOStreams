@@ -47,6 +47,17 @@ export {
   type UsenetIndexerLastError,
 } from './repositories/usenet-indexer-metrics.js';
 export {
+  StreamSessionRepository,
+  type StreamTransport,
+  type StreamEndReason,
+  type StreamSessionRow,
+  type StreamSessionUpsert,
+  type StreamBandwidthDelta,
+  type StreamBandwidthRollup,
+  type StreamBandwidthBucket,
+  type StreamHistoryQuery,
+} from './repositories/stream-sessions.js';
+export {
   SubtitleJobRepository,
   type SubtitleJobMeta,
   type SubtitleJobListRow,

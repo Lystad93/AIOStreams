@@ -14,6 +14,15 @@ import { DashboardQueryBoundary } from '@/components/shared/dashboard-query-boun
 import { api } from '@/lib/api';
 import { formatDuration } from '@/lib/format';
 
+interface TaskRunState {
+  instanceId: string;
+  self: boolean;
+  lastRunAt: number | null;
+  lastDurationMs: number | null;
+  lastStatus: 'ok' | 'error' | 'skipped' | null;
+  lastError: string | null;
+}
+
 interface TaskState {
   id: string;
   label: string;
@@ -30,6 +39,8 @@ interface TaskState {
   lastStatus: 'ok' | 'error' | 'skipped' | null;
   lastError: string | null;
   nextRunAt: number | null;
+  runs: TaskRunState[];
+  claimedBy: string | null;
 }
 
 function humanInterval(ms?: number): string {
@@ -44,11 +55,22 @@ const rel = (ms: number | null) => {
   return `${formatDuration(diff)} ago`;
 };
 
+/** Replica ids are UUIDs; the leading block is enough to tell them apart. */
+const shortId = (id: string) => id.slice(0, 8);
+
+const took = (ms: number | null) =>
+  ms == null
+    ? ''
+    : formatDuration(ms / 1000) === '0s'
+      ? `${ms}ms`
+      : formatDuration(ms / 1000);
+
 export function TasksPage() {
   const qc = useQueryClient();
   const query = useQuery({
     queryKey: ['dashboard', 'tasks'],
-    queryFn: () => api<{ tasks: TaskState[] }>('/dashboard/tasks'),
+    queryFn: () =>
+      api<{ tasks: TaskState[]; instanceId: string }>('/dashboard/tasks'),
     refetchInterval: 5000,
   });
 
@@ -117,6 +139,11 @@ export function TasksPage() {
                             >
                               {t.enabled ? 'enabled' : 'disabled'}
                             </span>
+                            {t.claimedBy && (
+                              <span className="text-[10px] uppercase px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-500 border border-blue-500/20">
+                                running on {shortId(t.claimedBy)}
+                              </span>
+                            )}
                           </div>
                           <p className="text-xs text-[--muted] mt-0.5">
                             {t.description}
@@ -136,7 +163,7 @@ export function TasksPage() {
                           >
                             {rel(t.lastRunAt)}
                             {t.lastDurationMs != null &&
-                              ` · ${formatDuration(t.lastDurationMs / 1000) === '0s' ? `${t.lastDurationMs}ms` : formatDuration(t.lastDurationMs / 1000)}`}
+                              ` · ${took(t.lastDurationMs)}`}
                           </span>
                           {t.kind === 'scheduled' && (
                             <>
@@ -167,6 +194,42 @@ export function TasksPage() {
                           Run now
                         </Button>
                       </div>
+                      {t.runs.length > 1 && (
+                        <details className="mt-3 group">
+                          <summary className="cursor-pointer text-xs text-[--muted] flex items-center gap-1 list-none [&::-webkit-details-marker]:hidden">
+                            <BiChevronDown className="transition-transform group-open:rotate-180" />
+                            {t.runs.length} replicas
+                          </summary>
+                          <div className="mt-2 grid gap-1">
+                            {t.runs.map((r) => (
+                              <div
+                                key={r.instanceId}
+                                className="flex items-center gap-2 text-xs"
+                              >
+                                <span className="font-mono text-[--muted]">
+                                  {shortId(r.instanceId)}
+                                </span>
+                                {r.self && (
+                                  <span className="text-[10px] text-[--muted]">
+                                    this one
+                                  </span>
+                                )}
+                                <span
+                                  className={cn(
+                                    'ml-auto',
+                                    r.lastStatus === 'error' && 'text-red-500',
+                                    r.lastStatus === 'ok' && 'text-emerald-500'
+                                  )}
+                                >
+                                  {rel(r.lastRunAt)}
+                                  {r.lastDurationMs != null &&
+                                    ` · ${took(r.lastDurationMs)}`}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
                       {t.lastStatus === 'error' && t.lastError && (
                         <details className="mt-3 group">
                           <summary className="cursor-pointer text-xs text-red-500 flex items-center gap-1 list-none [&::-webkit-details-marker]:hidden">

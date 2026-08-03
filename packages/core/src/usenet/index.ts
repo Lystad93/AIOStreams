@@ -9,11 +9,7 @@ import { PrioritySemaphore } from './pool/priority-semaphore.js';
 import { SegmentCache, CacheStats } from './pool/segment-cache.js';
 import { StatsAccumulator } from './stats/accumulator.js';
 import { FileStream, SeekableStream, SegmentMemo } from './pool/file-stream.js';
-import {
-  trackSeekableStream,
-  reapIdleStreams,
-  UsenetStreamReapedError,
-} from './pool/tracked-stream.js';
+import { trackSeekableStream, reapIdleStreams } from './pool/tracked-stream.js';
 import {
   inspectNzb,
   selectBestVideo,
@@ -1142,16 +1138,6 @@ export class UsenetEngine {
       this.liveReaders,
       this.options.streamIdleTimeoutMs
     );
-  }
-
-  /** Destroy one live reader by its stats stream id (dashboard stop action). */
-  destroyReader(id: number): boolean {
-    const reader = this.liveReaders.get(id);
-    if (!reader) return false;
-    reader.destroy(
-      new UsenetStreamReapedError('stream stopped from the dashboard')
-    );
-    return true;
   }
 
   /**

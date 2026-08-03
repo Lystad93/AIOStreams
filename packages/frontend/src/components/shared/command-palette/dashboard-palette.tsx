@@ -1,8 +1,12 @@
 import React, { useDeferredValue, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { BiCog } from 'react-icons/bi';
+import { BiCloudDownload, BiCog } from 'react-icons/bi';
 import { NAV, SECTIONED } from '@/app/dashboard/nav';
-import { TAB_MANIFEST } from '@/app/dashboard/settings/tabs.config';
+import {
+  TAB_MANIFEST,
+  humanise,
+  tabIdForKey,
+} from '@/app/dashboard/settings/tabs.config';
 import {
   useSettings,
   type SettingsKey,
@@ -57,7 +61,7 @@ const STATIC_ITEMS: Indexed[] = [
   ...Object.entries(TAB_MANIFEST).map(([section, def]) => ({
     id: `settings-${section}`,
     label: def.label,
-    trail: 'Settings',
+    trail: `Settings → ${def.group}`,
     icon: React.createElement(def.icon),
     target: { kind: 'settings', tab: section } as Target,
     haystack: buildHaystack([def.label, section, def.group]),
@@ -66,22 +70,40 @@ const STATIC_ITEMS: Indexed[] = [
 
 function indexFields(keys: SettingsKey[]): Indexed[] {
   return keys.map((k) => {
-    const section = k.key.split('.')[0];
-    const tabLabel = TAB_MANIFEST[section]?.label ?? section;
+    const parts = k.key.split('.');
+    const section = parts[0];
+    const usenet = section === USENET_SECTION;
+    const tabId = tabIdForKey(k.key);
+    const tab = TAB_MANIFEST[tabId];
+    const tabLabel = tab?.label ?? humanise(section);
+    // Presets alone carries well over a hundred fields, so without the
+    // subsection every result there would read the same.
+    const subsection = parts.slice(1, -1).map(humanise).join(' → ');
+    const base = usenet ? 'Usenet → Settings' : `Settings → ${tabLabel}`;
+
     return {
       id: `field-${k.key}`,
       label: k.label,
-      trail:
-        section === USENET_SECTION
-          ? 'Usenet → Settings'
-          : `Settings → ${tabLabel}`,
-      icon: <BiCog />,
-      target:
-        section === USENET_SECTION
-          ? { kind: 'usenet-settings', field: k.key }
-          : { kind: 'settings', tab: section, field: k.key },
+      trail: subsection ? `${base} → ${subsection}` : base,
+      // The tab's own icon, so results from one area read as a block.
+      icon: React.createElement(
+        usenet ? BiCloudDownload : (tab?.icon ?? BiCog)
+      ),
+      target: usenet
+        ? { kind: 'usenet-settings', field: k.key }
+        : { kind: 'settings', tab: tabId, field: k.key },
+      // Searchable by section and subsection too, so "presets torrentio" finds
+      // a field whose own label says neither.
       haystack: buildHaystack(
-        [k.label, k.key, k.env, ...k.key.split('.').slice(1)],
+        [
+          k.label,
+          k.key,
+          k.env,
+          tabLabel,
+          subsection,
+          `${tabLabel} ${k.label}`,
+          ...parts.slice(1),
+        ],
         [k.description]
       ),
     };

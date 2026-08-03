@@ -25,6 +25,7 @@ import {
   builtinsSchema,
   analyticsSchema,
   usenetSchema,
+  streamsSchema,
   releaseBlocklistSchema,
   subtitlesSchema,
 } from './schema/index.js';
@@ -48,6 +49,7 @@ export const runtimeSchemas = {
   builtins: builtinsSchema,
   analytics: analyticsSchema,
   usenet: usenetSchema,
+  streams: streamsSchema,
   releaseBlocklist: releaseBlocklistSchema,
   subtitles: subtitlesSchema,
 } as const;

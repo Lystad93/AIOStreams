@@ -47,3 +47,11 @@ export function parseXmlCompat(xml: string | Buffer): any {
   }
   return compatParser.parse(text);
 }
+
+/**
+ * Parse one well-formed XML element, skipping the whole-document validation
+ * pass.
+ */
+export function parseXmlElementCompat(xml: string): any {
+  return compatParser.parse(xml);
+}

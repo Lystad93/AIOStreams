@@ -42,7 +42,7 @@ import {
   type PublishTargetState,
   type ReleaseKeyKind,
 } from '@aiostreams/core';
-import { createResponse } from '../../utils/responses.js';
+import { createResponse } from '../../../utils/responses.js';
 
 const router: Router = Router();
 const logger = createLogger('dashboard:blocklist');

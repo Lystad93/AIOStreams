@@ -279,20 +279,6 @@ export function getUsenetLiveStats(): {
   };
 }
 
-/**
- * Force-stop a live read stream by its dashboard id. Iterates the warm
- * engines so a stale-fingerprint engine's streams remain stoppable too.
- * Returns whether a reader was found.
- */
-export function killUsenetStream(id: string): boolean {
-  const numeric = Number(id);
-  if (!Number.isSafeInteger(numeric) || numeric <= 0) return false;
-  for (const engine of usenetEngineRegistry.all()) {
-    if (engine.destroyReader(numeric)) return true;
-  }
-  return false;
-}
-
 /** Build the full dashboard overview for the given window. */
 export async function getUsenetStatsOverview(
   window: UsenetStatsWindow
@@ -388,9 +374,7 @@ export async function getUsenetStatsOverview(
   // Sort by usage desc, keeping configured-but-idle providers after active ones.
   providers.sort((a, b) => b.articles - a.articles || a.priority - b.priority);
 
-  const lastErrorByIndexer = new Map(
-    indexerErrors.map((e) => [e.indexer, e])
-  );
+  const lastErrorByIndexer = new Map(indexerErrors.map((e) => [e.indexer, e]));
   const totalGrabs = indexerSummary.reduce((s, i) => s + i.grabs, 0);
   const indexers: UsenetIndexerStatRow[] = indexerSummary
     .map((agg) => {

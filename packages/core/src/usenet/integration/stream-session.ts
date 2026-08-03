@@ -43,6 +43,10 @@ import {
 } from '../../release-blocklist/feedback.js';
 import { nzbContentKey } from '../../release-blocklist/keys.js';
 import { appConfig } from '../../utils/index.js';
+import {
+  streamRegistry,
+  usenetTargetKey,
+} from '../../stream-sessions/index.js';
 import { usenetEngineRegistry, getUsenetEngineConfig } from './engine.js';
 import { fetchNzb, parseNzbCached, canonicaliseNzbHash } from './library.js';
 import { noteStreamActivity, pruneStreamActivity } from './damage-policy.js';
@@ -607,6 +611,8 @@ export async function openNativeUsenetStream(opts: {
   start?: number;
   end?: number;
   signal?: AbortSignal;
+  /** Client address, for stream accounting. */
+  clientIp?: string;
 }): Promise<OpenedUsenetStream> {
   opts.signal?.throwIfAborted();
   const decoded = decodeUsenetStreamToken(opts.token);
@@ -648,12 +654,63 @@ export async function openNativeUsenetStream(opts: {
     );
   }
 
+  // Before the NZB is fetched and parsed, so a refused stream costs nothing.
+  const admitted = streamRegistry.open({
+    transport: 'usenet',
+    username: decoded.owner ?? '',
+    clientIp: opts.clientIp,
+    targetKey: usenetTargetKey(
+      decoded.hash,
+      decoded.fileIndex,
+      decoded.innerPath
+    ),
+    filename: decoded.filename,
+    start: opts.start,
+  });
+  if (!admitted.ok) {
+    logger.info(
+      {
+        username: decoded.owner,
+        hash: decoded.hash,
+        reason: admitted.verdict.reason,
+      },
+      'usenet stream refused'
+    );
+
+    const forbidden =
+      admitted.verdict.reason === 'banned' ||
+      admitted.verdict.reason === 'blocked';
+    const outOfSlots =
+      admitted.verdict.reason === 'connection_user' ||
+      admitted.verdict.reason === 'connection_global';
+    throw new DebridError(admitted.verdict.message ?? 'stream not permitted', {
+      statusCode: forbidden ? 403 : 429,
+      statusText: forbidden ? 'Forbidden' : 'Too Many Requests',
+      code: forbidden
+        ? 'FORBIDDEN'
+        : outOfSlots
+          ? 'TOO_MANY_ACTIVE_CONNECTIONS'
+          : 'TOO_MANY_REQUESTS',
+      headers: {},
+      body: null,
+      type: 'api_error',
+    });
+  }
+  const handle = admitted.handle;
+
   noteStreamActivity(decoded.hash);
-  const session = await getStreamSession(decoded, providers, options);
-  opts.signal?.throwIfAborted();
+  let session: UsenetStreamSession;
+  try {
+    session = await getStreamSession(decoded, providers, options);
+    opts.signal?.throwIfAborted();
+  } catch (err) {
+    handle.close();
+    throw err;
+  }
   const { size, filename } = session;
   const start = Math.max(0, opts.start ?? 0);
   const end = Math.min(size, opts.end ?? size);
+  handle.setInfo({ size, filename });
 
   let stream = session.stream.createReadStream({ start, end });
   if (session.matroska && appConfig.usenet.matroskaHoleFill) {
@@ -666,7 +723,19 @@ export async function openNativeUsenetStream(opts: {
     });
   }
   if (opts.signal) addAbortSignal(opts.signal, stream);
-  stream.once('close', () => noteStreamActivity(session.hash));
+  // Intercept push rather than listening for 'data', which would flip the
+  // stream into flowing mode before the response attaches and lose chunks.
+  const push = stream.push.bind(stream);
+  stream.push = (chunk: unknown, encoding?: BufferEncoding): boolean => {
+    const length = (chunk as { length?: number } | null)?.length;
+    if (typeof length === 'number' && length > 0) handle.addBytes(length);
+    return push(chunk as never, encoding);
+  };
+  handle.attach(stream);
+  stream.once('close', () => {
+    handle.close();
+    noteStreamActivity(session.hash);
+  });
 
   stream.once('error', (err) => {
     if (isDefinitiveMiss(err)) {

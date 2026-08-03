@@ -14,12 +14,19 @@ import { releaseBlocklist } from './0013_release_blocklist.js';
 import { releaseBlocklistPublish } from './0014_release_blocklist_publish.js';
 import { usenetLatency } from './0015_usenet_latency.js';
 import { usenetIndexerMetrics } from './0016_usenet_indexer_metrics.js';
-import { subtitleJobs } from './0017_subtitle_jobs.js';
-import { subtitleJobDuration } from './0018_subtitle_job_duration.js';
-import { subtitleSources } from './0019_subtitle_sources.js';
-import { subtitleMatchKey } from './0020_subtitle_match_key.js';
-import { subtitleReleaseDuration } from './0021_subtitle_release_duration.js';
-import { subtitleExternalOrigin } from './0022_subtitle_external_origin.js';
+import { streamSessions } from './0017_stream_sessions.js';
+import { taskState } from './0018_task_state.js';
+// Fork migrations live in a reserved 900+ range, deliberately far above
+// anything upstream will reach. Sequential ids collided the first time
+// upstream added a migration (its 0017/0018 vs ours), and because the runner
+// keys ONLY on `id` (migrations/runner.ts), the collision would have marked
+// upstream's as already-applied and silently skipped creating its tables.
+import { subtitleJobs } from './0901_subtitle_jobs.js';
+import { subtitleJobDuration } from './0902_subtitle_job_duration.js';
+import { subtitleSources } from './0903_subtitle_sources.js';
+import { subtitleMatchKey } from './0904_subtitle_match_key.js';
+import { subtitleReleaseDuration } from './0905_subtitle_release_duration.js';
+import { subtitleExternalOrigin } from './0906_subtitle_external_origin.js';
 import type { Migration } from './types.js';
 
 export const MIGRATIONS: readonly Migration[] = [
@@ -39,6 +46,9 @@ export const MIGRATIONS: readonly Migration[] = [
   releaseBlocklistPublish,
   usenetLatency,
   usenetIndexerMetrics,
+  streamSessions,
+  taskState,
+  // Fork migrations last: the runner applies in ARRAY order, not id order.
   subtitleJobs,
   subtitleJobDuration,
   subtitleSources,

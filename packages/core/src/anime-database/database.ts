@@ -128,7 +128,7 @@ export class AnimeDatabase {
         intervalMs: source.refreshIntervalMs(),
         enabled: true,
         destructive: false,
-        multiReplica: 'single',
+        multiReplica: 'all',
         run: async () => {
           await this.refreshOneSource(source);
           return { ok: true, message: `${source.name} refreshed` };

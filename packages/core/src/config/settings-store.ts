@@ -168,6 +168,7 @@ export class SettingsStore<TSections extends SectionSchemas> {
   private storedKeys: Set<string> = new Set();
   private fieldsByKey: Map<string, FieldEntry>;
   private listeners: Set<SettingsChangeListener<TSections>> = new Set();
+  private warnedLegacyEnv: Set<string> = new Set();
 
   constructor(
     private readonly schemas: TSections,
@@ -433,6 +434,20 @@ export class SettingsStore<TSections extends SectionSchemas> {
     for (const { field, path, key } of this.fieldsByKey.values()) {
       const override = resolveEnvOverride(field.env);
       const rawEnv = override?.value;
+      // Names after the first are aliases kept working across a rename, so only
+      // an operator still setting one hears about it.
+      const primary = primaryEnvName(field.env);
+      if (
+        override &&
+        override.name !== primary &&
+        !this.warnedLegacyEnv.has(override.name)
+      ) {
+        this.warnedLegacyEnv.add(override.name);
+        logger.warn(
+          { key, deprecated: override.name, replacement: primary },
+          'environment variable is deprecated'
+        );
+      }
 
       let value: ConfigValue | undefined;
       if (rawEnv !== undefined) {

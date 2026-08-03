@@ -9,12 +9,13 @@ import {
   BiData,
   BiCloudDownload,
   BiBlock,
-  BiNetworkChart,
+  BiPlayCircle,
   BiCog,
   BiCaptions,
 } from 'react-icons/bi';
 import { SECTIONS } from '@/app/dashboard/usenet/sections';
 import { BLOCKLIST_SECTIONS } from '@/app/dashboard/blocklist/sections';
+import { STREAMS_SECTIONS } from '@/app/dashboard/streams/sections';
 import type { DashboardSection } from '@/components/shared/section-nav-select';
 
 export interface DashboardNavItem {
@@ -34,10 +35,10 @@ export const NAV: DashboardNavItem[] = [
   { label: 'Users', href: '/dashboard/users', icon: BiGroup },
   { label: 'Tasks', href: '/dashboard/tasks', icon: BiTask },
   { label: 'Cache', href: '/dashboard/cache', icon: BiData },
+  { label: 'Streams', href: '/dashboard/streams', icon: BiPlayCircle },
   { label: 'Usenet', href: '/dashboard/usenet', icon: BiCloudDownload },
   { label: 'Subtitles', href: '/dashboard/subtitles', icon: BiCaptions },
   { label: 'Blocklists', href: '/dashboard/blocklist', icon: BiBlock },
-  { label: 'Proxy', href: '/dashboard/proxy', icon: BiNetworkChart },
   { label: 'Settings', href: '/dashboard/settings', icon: BiCog },
 ];
 
@@ -47,6 +48,7 @@ export const NAV: DashboardNavItem[] = [
  * to the default section.
  */
 export const SECTIONED: Record<string, readonly DashboardSection[]> = {
+  '/dashboard/streams': STREAMS_SECTIONS,
   '/dashboard/usenet': SECTIONS,
   '/dashboard/blocklist': BLOCKLIST_SECTIONS,
 };

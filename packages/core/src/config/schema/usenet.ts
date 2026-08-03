@@ -174,7 +174,7 @@ export const usenetSchema = {
     env: 'USENET_STREAMING_PRIORITY',
     requiresRestart: false,
     secret: false,
-    ui: { kind: 'number' as const, min: 0, hidden: true },
+    ui: { kind: 'number' as const, min: 0.5, max: 1, hidden: true, step: 0.01 },
   },
   segmentDiskCacheBytes: {
     schema: byteSize,

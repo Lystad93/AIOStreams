@@ -255,6 +255,10 @@ export class StremthruTorzPreset extends StremThruPreset {
       return { code: 'pp', shortName: 'PKP' };
     }
 
+    if (serviceId === constants.TORRIN_SERVICE) {
+      return { code: 'ti', shortName: 'TR' };
+    }
+
     return {
       code: constants.SERVICE_DETAILS[serviceId].shortName.toLowerCase(),
       shortName: constants.SERVICE_DETAILS[serviceId].shortName,

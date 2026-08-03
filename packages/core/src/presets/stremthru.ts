@@ -96,6 +96,7 @@ export class StremThruPreset extends Preset {
     constants.PIKPAK_SERVICE,
     constants.REALDEBRID_SERVICE,
     constants.TORBOX_SERVICE,
+    constants.TORRIN_SERVICE,
   ] as const;
 
   protected static readonly socialLinks: Option['socials'] = [

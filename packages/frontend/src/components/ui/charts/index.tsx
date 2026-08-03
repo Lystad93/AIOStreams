@@ -47,13 +47,23 @@ const AXIS_PROPS = {
   axisLine: false,
 } as const;
 
+const TIME_AXIS_PROPS = {
+  ...AXIS_PROPS,
+  interval: 'preserveStartEnd',
+  minTickGap: 24,
+} as const;
+
 function ChartTooltip(props: any) {
-  const { active, payload, label, valueFormatter } = props;
+  const { active, payload, label, valueFormatter, tooltipLabelKey } = props;
   if (!active || !payload?.length) return null;
+  // The axis label is abbreviated to fit; the datum can carry a fuller one.
+  const heading =
+    (tooltipLabelKey ? payload[0]?.payload?.[tooltipLabelKey] : undefined) ??
+    label;
   return (
     <div className="rounded-lg border border-[--border] bg-[--paper] px-3 py-2 text-xs shadow-xl">
-      {label !== undefined && (
-        <div className="mb-1 font-medium text-[--foreground]">{label}</div>
+      {heading !== undefined && (
+        <div className="mb-1 font-medium text-[--foreground]">{heading}</div>
       )}
       {payload.map((p: any, i: number) => (
         <div key={i} className="flex items-center gap-2 tabular-nums">
@@ -88,6 +98,8 @@ interface BaseChartProps {
   /** Formats Y-axis tick labels (e.g. bytes → "2.1 GB") so large raw numbers
    *  don't overflow the card. Falls back to the raw value. */
   yTickFormatter?: (v: any) => string;
+  /** Datum field holding a fuller tooltip heading than the axis label. */
+  tooltipLabelKey?: string;
   hideLegend?: boolean;
   hideGrid?: boolean;
 }
@@ -103,6 +115,8 @@ export function LineChart({
   height = 260,
   className,
   valueFormatter,
+  yTickFormatter,
+  tooltipLabelKey,
   hideLegend,
   hideGrid,
 }: BaseChartProps) {
@@ -120,10 +134,19 @@ export function LineChart({
               vertical={false}
             />
           )}
-          <XAxis dataKey={xKey} {...AXIS_PROPS} />
-          <YAxis {...AXIS_PROPS} width={40} />
+          <XAxis dataKey={xKey} {...TIME_AXIS_PROPS} />
+          <YAxis
+            {...AXIS_PROPS}
+            width={yTickFormatter ? 60 : 40}
+            tickFormatter={yTickFormatter}
+          />
           <Tooltip
-            content={<ChartTooltip valueFormatter={valueFormatter} />}
+            content={
+              <ChartTooltip
+                valueFormatter={valueFormatter}
+                tooltipLabelKey={tooltipLabelKey}
+              />
+            }
             cursor={{ stroke: 'var(--border)' }}
           />
           {!hideLegend && series.length > 1 && (
@@ -156,6 +179,7 @@ export function AreaChart({
   stacked,
   valueFormatter,
   yTickFormatter,
+  tooltipLabelKey,
   hideLegend,
   hideGrid,
 }: BaseChartProps) {
@@ -188,14 +212,19 @@ export function AreaChart({
               vertical={false}
             />
           )}
-          <XAxis dataKey={xKey} {...AXIS_PROPS} />
+          <XAxis dataKey={xKey} {...TIME_AXIS_PROPS} />
           <YAxis
             {...AXIS_PROPS}
             width={yTickFormatter ? 60 : 40}
             tickFormatter={yTickFormatter}
           />
           <Tooltip
-            content={<ChartTooltip valueFormatter={valueFormatter} />}
+            content={
+              <ChartTooltip
+                valueFormatter={valueFormatter}
+                tooltipLabelKey={tooltipLabelKey}
+              />
+            }
             cursor={{ stroke: 'var(--border)' }}
           />
           {!hideLegend && series.length > 1 && (

@@ -159,7 +159,7 @@ export abstract class BaseDataset {
       retryIntervalMs: Math.floor(this.REFRESH_INTERVAL_MS / 4),
       enabled: true,
       destructive: false,
-      multiReplica: 'single',
+      multiReplica: 'all',
       run: () => this.runSync(),
     });
   }

@@ -9,7 +9,6 @@ import {
   LogsPage,
   SystemPage,
   SettingsPage,
-  ProxyPage,
   UsersPage,
   TasksPage,
   CachePage,
@@ -18,9 +17,13 @@ import {
   BlocklistSourcesPage,
   BlocklistEntriesPage,
   BlocklistPublishingPage,
+  StreamsLayout,
+  StreamsActivePage,
+  StreamsHistoryPage,
+  StreamsBandwidthPage,
+  StreamsBansPage,
   UsenetLayout,
   UsenetLibraryPage,
-  UsenetStreamsPage,
   UsenetStatsPage,
   UsenetProvidersPage,
   UsenetSettingsPage,
@@ -177,10 +180,43 @@ const dashboardSettingsRoute = createRoute({
   component: SettingsPage,
 });
 
-const dashboardProxyRoute = createRoute({
+const dashboardStreamsRoute = createRoute({
   getParentRoute: () => dashboardRoute,
-  path: 'proxy',
-  component: ProxyPage,
+  path: 'streams',
+  component: StreamsLayout,
+});
+
+// `/dashboard/streams` → redirect to the default section.
+const dashboardStreamsIndexRoute = createRoute({
+  getParentRoute: () => dashboardStreamsRoute,
+  path: '/',
+  beforeLoad: () => {
+    throw redirect({ to: '/dashboard/streams/active' });
+  },
+});
+
+const dashboardStreamsActiveRoute = createRoute({
+  getParentRoute: () => dashboardStreamsRoute,
+  path: 'active',
+  component: StreamsActivePage,
+});
+
+const dashboardStreamsHistoryRoute = createRoute({
+  getParentRoute: () => dashboardStreamsRoute,
+  path: 'history',
+  component: StreamsHistoryPage,
+});
+
+const dashboardStreamsBandwidthRoute = createRoute({
+  getParentRoute: () => dashboardStreamsRoute,
+  path: 'bandwidth',
+  component: StreamsBandwidthPage,
+});
+
+const dashboardStreamsBansRoute = createRoute({
+  getParentRoute: () => dashboardStreamsRoute,
+  path: 'bans',
+  component: StreamsBansPage,
 });
 
 const dashboardUsersRoute = createRoute({
@@ -260,12 +296,6 @@ const dashboardUsenetLibraryRoute = createRoute({
   component: UsenetLibraryPage,
 });
 
-const dashboardUsenetStreamsRoute = createRoute({
-  getParentRoute: () => dashboardUsenetRoute,
-  path: 'streams',
-  component: UsenetStreamsPage,
-});
-
 const dashboardUsenetStatsRoute = createRoute({
   getParentRoute: () => dashboardUsenetRoute,
   path: 'stats',
@@ -300,11 +330,17 @@ const routeTree = rootRoute.addChildren([
     dashboardLogsRoute,
     dashboardSystemRoute,
     dashboardSettingsRoute,
-    dashboardProxyRoute,
     dashboardUsersRoute,
     dashboardTasksRoute,
     dashboardSubtitlesRoute,
     dashboardCacheRoute,
+    dashboardStreamsRoute.addChildren([
+      dashboardStreamsIndexRoute,
+      dashboardStreamsActiveRoute,
+      dashboardStreamsHistoryRoute,
+      dashboardStreamsBandwidthRoute,
+      dashboardStreamsBansRoute,
+    ]),
     dashboardBlocklistRoute.addChildren([
       dashboardBlocklistIndexRoute,
       dashboardBlocklistSourcesRoute,
@@ -314,7 +350,6 @@ const routeTree = rootRoute.addChildren([
     dashboardUsenetRoute.addChildren([
       dashboardUsenetIndexRoute,
       dashboardUsenetLibraryRoute,
-      dashboardUsenetStreamsRoute,
       dashboardUsenetStatsRoute,
       dashboardUsenetProvidersRoute,
       dashboardUsenetSettingsRoute,

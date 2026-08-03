@@ -75,7 +75,7 @@ export class ParallelRangeStream extends OrderedParallelStream {
       totalTasks: Math.ceil((end - start) / windowBytes),
       maxConcurrency: concurrency,
       maxBufferedBytes,
-      slotCap: 2 * prefetchWindows + 2 * concurrency + 8,
+      slotCap: prefetchWindows + concurrency + 16,
       initialMaxSlot: windowBytes,
       logger,
     });

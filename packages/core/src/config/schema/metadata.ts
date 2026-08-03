@@ -48,9 +48,9 @@ export const metadataSchema = {
     },
     fetchAliases: {
       schema: z.boolean(),
-      default: true,
+      default: false,
       label: 'Fetch Trakt aliases',
-      description: 'Enable fetching aliases from Trakt.',
+      description: 'Enable fetching aliases from Trakt. Requires a client ID.',
       env: 'FETCH_TRAKT_ALIASES',
       requiresRestart: false,
       secret: false,

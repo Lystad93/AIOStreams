@@ -20,21 +20,20 @@ import {
   Permission,
   downloadManager,
   NzbTooLargeError,
-  BuiltinProxyStats,
   BuiltinProxy,
+  streamRegistry,
+  proxyTargetKey,
 } from '@aiostreams/core';
 import { z } from 'zod';
 import { request, Dispatcher } from 'undici';
 import { pipeline } from 'stream/promises';
+import { Transform } from 'stream';
 import { requireAdmin } from '../../middlewares/auth.js';
 import { corsMiddleware } from '../../middlewares/cors.js';
 import { StaticFiles } from '../../app.js';
 
 const logger = createLogger('server');
 const router: Router = Router();
-
-// Create a singleton instance of BuiltinProxyStats
-const proxyStats = new BuiltinProxyStats();
 
 function sanitiseHeaderValue(value: string): string {
   return value.replace(/[^\t\x20-\x7e]/g, '');
@@ -61,6 +60,26 @@ function sanitiseHeaders(
   }
 
   return sanitised;
+}
+
+/**
+ * Byte offset a client's `Range` header asks for. Suffix ranges (`bytes=-N`)
+ * have no known start, so they read as 0.
+ */
+function rangeStart(header: string | undefined): number {
+  const match = /^bytes=(\d+)-/.exec((header ?? '').trim());
+  return match ? Number(match[1]) : 0;
+}
+
+/**
+ * Total size of the resource from a `Content-Range: bytes a-b/total` header.
+ * `Content-Length` is the length of the returned range on a 206, so using it
+ * would shrink the reported file size on every seek.
+ */
+function totalFromContentRange(header: string | string[] | undefined): number {
+  const value = Array.isArray(header) ? header[0] : header;
+  const match = /\/(\d+)\s*$/.exec(value ?? '');
+  return match ? Number(match[1]) : 0;
 }
 
 function copyHeaders(headers: Record<string, string | string[] | undefined>) {
@@ -277,44 +296,6 @@ async function serveNzbFromGrabCache(
 
 router.use(corsMiddleware);
 
-router.get(
-  '/stats',
-  requireAdmin,
-  async (_req: Request, res: Response, next: NextFunction) => {
-    try {
-      const allUserStats = await proxyStats.getAllUserStats();
-      const users = Array.from(allUserStats.entries()).map(
-        ([username, userStats]) => ({
-          username,
-          active: userStats.active,
-          history: userStats.history,
-        })
-      );
-      res.json({
-        users,
-        summary: {
-          totalActiveConnections: users.reduce(
-            (t, u) => t + u.active.length,
-            0
-          ),
-          totalHistoryConnections: users.reduce(
-            (t, u) => t + u.history.length,
-            0
-          ),
-          usersWithActiveConnections: users.filter((u) => u.active.length > 0)
-            .length,
-          usersWithHistory: users.filter((u) => u.history.length > 0).length,
-        },
-      });
-    } catch (error) {
-      logger.error('Failed to get proxy stats', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      next(error);
-    }
-  }
-);
-
 // POST /generate — produce a proxified URL. Admin-only (dashboard session).
 // Credentials are injected server-side from AIOSTREAMS_AUTH for the session
 // user — the proxy password never reaches the browser.
@@ -387,6 +368,7 @@ router.all(
     let auth: { username: string; password: string } | undefined;
     let data: z.infer<typeof ProxyDataSchema> | undefined;
     let clientIp: string | undefined;
+    let session: ReturnType<typeof streamRegistry.open> | undefined;
 
     try {
       const { auth: decodedAuth, data: decodedData } =
@@ -410,14 +392,7 @@ router.all(
       }
 
       // Track the connection
-      clientIp =
-        req.requestIp || req.ip || req.socket.remoteAddress || 'unknown';
-      const timestamp = Date.now();
-
-      const connectionLimit =
-        appConfig.bootstrap.authConnectionLimits?.get(auth.username) ??
-        appConfig.bootstrap.authConnectionLimits?.get('*') ??
-        0;
+      clientIp = req.requestIp || req.ip || req.socket.remoteAddress;
 
       // prepare and execute upstream request
       const clientHeaders = copyHeaders(req.headers);
@@ -427,36 +402,38 @@ router.all(
       const isGetRequest = req.method === 'GET';
 
       if (isGetRequest) {
-        if (connectionLimit > 0) {
-          const activeConnections = await proxyStats.getActiveConnections(
-            auth.username
-          );
-          if (activeConnections.length >= connectionLimit) {
-            logger.warn(`[${requestId}] Connection limit reached`, {
-              username: auth.username,
-              clientIp,
-              connectionLimit,
-            });
-            res
-              .status(302)
-              .redirect(`/static/${StaticFiles.CONTENT_PROXY_LIMIT_REACHED}`);
-            return;
-          }
-        }
-        proxyStats
-          .addConnection(
-            auth.username,
+        // Without probes, a viewer that vanishes without a FIN leaves the
+        // response hanging on a socket nothing will ever close.
+        req.socket.setKeepAlive(true, 60_000);
+        // Seeks join the session already open for this (user, ip, target)
+        // and skip admission.
+        session = streamRegistry.open({
+          transport: 'proxy',
+          username: auth.username,
+          clientIp,
+          targetKey: proxyTargetKey(data.url),
+          filename,
+          displayUrl: makeUrlLogSafe(data.url),
+          // Where this read starts, so a seek advances the progress bar
+          // instead of restarting it.
+          start: rangeStart(req.headers.range),
+        });
+        if (!session.ok) {
+          logger.warn(`[${requestId}] Proxy stream refused`, {
+            username: auth.username,
             clientIp,
-            data.url,
-            timestamp,
-            requestId,
-            filename
-          )
-          .catch((error) =>
-            logger.warn(`[${requestId}] Failed to add connection to stats`, {
-              error: error instanceof Error ? error.message : String(error),
-            })
-          );
+            reason: session.verdict.reason,
+          });
+          res
+            .status(302)
+            .redirect(`/static/${StaticFiles.CONTENT_PROXY_LIMIT_REACHED}`);
+          return;
+        }
+        // A full-buffered player never notices a clean FIN.
+        session.handle.onKill(() => {
+          upstreamResponse?.body?.destroy();
+          if (!req.socket.destroyed) req.socket.resetAndDestroy();
+        });
       }
 
       const upstreamStartTime = Date.now();
@@ -566,6 +543,15 @@ router.all(
         targetUrl: currentUrl,
       });
 
+      if (session?.ok) {
+        // Content-Range carries the whole file; Content-Length only this range.
+        const declared = Number(upstreamResponse.headers['content-length']);
+        const total =
+          totalFromContentRange(upstreamResponse.headers['content-range']) ||
+          (Number.isFinite(declared) ? declared : 0);
+        session.handle.setInfo({ size: total || undefined });
+      }
+
       if (req.method === 'HEAD') {
         res.end();
       } else {
@@ -578,6 +564,15 @@ router.all(
               resDestroyed: res.destroyed,
             }
           );
+        } else if (session?.ok) {
+          const handle = session.handle;
+          const counter = new Transform({
+            transform(chunk, _enc, cb) {
+              handle.addBytes(chunk.length);
+              cb(null, chunk);
+            },
+          });
+          await pipeline(upstreamResponse.body, counter, res);
         } else {
           await pipeline(upstreamResponse.body, res);
         }
@@ -642,15 +637,8 @@ router.all(
         });
       }
     } finally {
-      if (auth && clientIp && data) {
-        proxyStats
-          .endConnection(auth.username, clientIp, data.url, requestId)
-          .catch((statsError) =>
-            logger.warn(`[${requestId}] Failed to end connection in stats`, {
-              error: statsError,
-            })
-          );
-      }
+      // Ends this request only; the session idles out on its own.
+      if (session?.ok) session.handle.close();
     }
   }
 );

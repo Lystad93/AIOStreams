@@ -5,6 +5,7 @@
   Resource,
   Stream,
   ParsedStream,
+  PresetMetadata,
 } from '../db/index.js';
 import { baseOptions } from './preset.js';
 import { appConfig, SERVICE_DETAILS } from '../utils/index.js';
@@ -21,7 +22,7 @@ export class TorBoxSearchPreset extends BuiltinAddonPreset {
     return BuiltinStreamParser;
   }
 
-  static override get METADATA() {
+  static override get METADATA(): PresetMetadata {
     const supportedResources = [constants.STREAM_RESOURCE];
 
     const options: Option[] = [
@@ -138,7 +139,6 @@ export class TorBoxSearchPreset extends BuiltinAddonPreset {
         appConfig.builtins.torboxSearch.userAgent ??
         appConfig.http.defaultUserAgent,
       SUPPORTED_SERVICES: TorBoxSearchPreset.supportedServices,
-      REQUIRES_SERVICE: true,
       DESCRIPTION:
         'Unofficial debrid/usenet addon for the TorBox Search API, with support for multiple services.',
       OPTIONS: options,
@@ -148,6 +148,12 @@ export class TorBoxSearchPreset extends BuiltinAddonPreset {
       ],
       SUPPORTED_RESOURCES: [constants.STREAM_RESOURCE],
       BUILTIN: true,
+      DISABLED: {
+        disabled: true,
+        removed: true,
+        reason:
+          'The TorBox Search API that this addon relies on has been shut down, so this addon is no longer functional.',
+      },
     };
   }
 
@@ -155,7 +161,11 @@ export class TorBoxSearchPreset extends BuiltinAddonPreset {
     userData: UserData,
     options: Record<string, any>
   ): Promise<Addon[]> {
-    const usableServices = this.getUsableServices(userData, options.services, options.name);
+    const usableServices = this.getUsableServices(
+      userData,
+      options.services,
+      options.name
+    );
 
     // if no services are usable, return a single addon with no services
     if (!usableServices || usableServices.length === 0) {

@@ -19,6 +19,17 @@ export interface RuntimeConfigUiOverride {
   /** Column ratio for `KeyValueListField`. */
   mapWidth?: 'equal' | 'wide-key' | 'wide-value';
   /**
+   * Value cell kind for `KeyValueListField`, when the auto-classifier can't
+   * infer it (e.g. a record of env-coerced `number | string` size values).
+   */
+  mapValueKind?:
+    | 'string'
+    | 'number'
+    | 'boolean'
+    | 'numberOrBool'
+    | 'size'
+    | 'json';
+  /**
    * Force a specific UI kind, overriding the auto-classifier.
    */
   kind?:
@@ -33,6 +44,10 @@ export interface RuntimeConfigUiOverride {
     | 'json';
   /** Minimum allowed value for `number` fields (default: 0). */
   min?: number;
+  /** Maximum allowed value for `number` fields (default: unbounded). */
+  max?: number;
+  /** Step size for `number` fields (default: 1). */
+  step?: number;
   /**
    * For `enum` - the values offered in the UI, when they are narrower than the
    * ones the schema accepts

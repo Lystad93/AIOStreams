@@ -149,7 +149,7 @@ export function toDebridError(err: unknown): DebridError {
     return new DebridError('article not found on any provider', {
       statusCode: 404,
       statusText: 'Not Found',
-      code: 'NOT_FOUND',
+      code: 'DOWNLOAD_FAILED',
       headers: {},
       body: null,
       type: 'upstream_error',

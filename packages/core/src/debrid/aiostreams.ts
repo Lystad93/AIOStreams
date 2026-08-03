@@ -255,7 +255,7 @@ export class NativeUsenetService implements UsenetDebridService {
       throw new DebridError('nzb previously failed on all providers', {
         statusCode: 404,
         statusText: 'Not Found',
-        code: 'NOT_FOUND',
+        code: 'DOWNLOAD_FAILED',
         headers: {},
         body: null,
         type: 'api_error',
@@ -346,6 +346,7 @@ export class NativeUsenetService implements UsenetDebridService {
       innerPath: selected.path,
       filename: chosenFilename,
       releaseKey: playbackInfo.releaseKey,
+      owner: this.owner,
     });
 
     const url = `${appConfig.bootstrap.baseUrl}/api/v1/usenet/stream/${token}`;

@@ -26,6 +26,7 @@ import {
   DebridFile,
   UsenetDebridService,
   DebridFailureCache,
+  convertStatusCodeToError,
 } from './base.js';
 import { ParsedResult, parseTorrentTitle } from '@viren070/parse-torrent-title';
 import z, { ZodError } from 'zod';
@@ -91,29 +92,6 @@ const transformHistoryResponse = (
   },
   error: data.error,
 });
-
-const convertStatusCodeToError = (code: number): DebridError['code'] => {
-  switch (code) {
-    case 400:
-      return 'BAD_REQUEST';
-    case 401:
-      return 'UNAUTHORIZED';
-    case 403:
-      return 'FORBIDDEN';
-    case 404:
-      return 'NOT_FOUND';
-    case 429:
-      return 'TOO_MANY_REQUESTS';
-    case 500:
-      return 'INTERNAL_SERVER_ERROR';
-    case 501:
-      return 'NOT_IMPLEMENTED';
-    case 503:
-      return 'SERVICE_UNAVAILABLE';
-    default:
-      return 'UNKNOWN';
-  }
-};
 
 /**
  * API client for SABnzbd APIs
@@ -389,7 +367,7 @@ export class SABnzbdApi {
           throw new DebridError(`NZB failed: ${failMessage}`, {
             statusCode: 400,
             statusText: 'Bad Request',
-            code: 'UNKNOWN',
+            code: 'DOWNLOAD_FAILED',
             headers: {},
             type: 'api_error',
           });
