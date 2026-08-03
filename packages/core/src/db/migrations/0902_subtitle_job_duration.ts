@@ -7,7 +7,7 @@ import type { Migration } from './types.js';
  * created/updated timestamps.
  */
 export const subtitleJobDuration: Migration = {
-  id: 18,
+  id: 902,
   name: 'subtitle_job_duration',
   up: {
     sqlite: `

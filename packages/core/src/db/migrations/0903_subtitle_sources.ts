@@ -19,7 +19,7 @@ import type { Migration } from './types.js';
  * inconsistently for the same release, so the filename is the release identity.
  */
 export const subtitleSources: Migration = {
-  id: 19,
+  id: 903,
   name: 'subtitle_sources',
   up: {
     sqlite: `

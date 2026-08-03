@@ -10,7 +10,7 @@ import type { Migration } from './types.js';
  * 60fps remux) share a runtime, and therefore share subtitle timing.
  */
 export const subtitleReleaseDuration: Migration = {
-  id: 21,
+  id: 905,
   name: 'subtitle_release_duration',
   up: {
     sqlite: `

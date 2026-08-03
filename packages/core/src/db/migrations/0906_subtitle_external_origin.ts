@@ -13,7 +13,7 @@ import type { Migration } from './types.js';
  * All nullable: an embedded extraction has no external origin to record.
  */
 export const subtitleExternalOrigin: Migration = {
-  id: 22,
+  id: 906,
   name: 'subtitle_external_origin',
   up: {
     sqlite: `

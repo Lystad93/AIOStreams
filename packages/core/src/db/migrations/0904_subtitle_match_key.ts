@@ -13,7 +13,7 @@ import type { Migration } from './types.js';
  * to exact-filename matching so those keep resolving.
  */
 export const subtitleMatchKey: Migration = {
-  id: 20,
+  id: 904,
   name: 'subtitle_match_key',
   up: {
     sqlite: `

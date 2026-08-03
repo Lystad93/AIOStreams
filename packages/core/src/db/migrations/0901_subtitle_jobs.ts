@@ -11,7 +11,7 @@ import type { Migration } from './types.js';
  * never selects them, only their presence/length.
  */
 export const subtitleJobs: Migration = {
-  id: 17,
+  id: 901,
   name: 'subtitle_jobs',
   up: {
     sqlite: `

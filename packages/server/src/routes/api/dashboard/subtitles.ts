@@ -4,7 +4,7 @@ import {
   buildSubtitleFilename,
   createLogger,
 } from '@aiostreams/core';
-import { createResponse } from '../../utils/responses.js';
+import { createResponse } from '../../../utils/responses.js';
 
 /**
  * Dashboard endpoints for the subtitle extraction+translation feature (spec
