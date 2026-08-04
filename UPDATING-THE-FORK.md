@@ -1,0 +1,177 @@
+# Updating this fork from upstream
+
+This fork adds the subtitle extract/translate feature to Viren070/AIOStreams.
+Upstream releases frequently; this is the procedure for taking their changes.
+
+**The one-time database surgery is done and will not be needed again.** Our
+migrations now live in a reserved id range that upstream will never reach, so
+future merges are ordinary code merges.
+
+---
+
+## The rules that matter
+
+1. **Fork migrations use ids 901+.** Never sequential. Upstream numbers theirs
+   1, 2, 3… and the migration runner keys on `id` ALONE
+   (`packages/core/src/db/migrations/runner.ts`). A collision makes the runner
+   treat upstream's migration as already-applied and silently skip creating its
+   tables — you find out at runtime, not at merge time.
+   New fork migration? Next free 9xx. Put it **last in the `MIGRATIONS` array**
+   too; the runner applies in array order, not id order.
+
+2. **After resolving conflicts, stage everything and re-check.** A conflict
+   resolution often involves edits to files that weren't themselves conflicted
+   (a moved file's imports, a renumbered id). `git add <the conflicted files>`
+   misses those, and the merge commits with the renames but not the content.
+   Always finish with `git add -A` and read `git status` before committing.
+
+3. **Build locally before pushing.** The VPS build is slow and failing there
+   costs a full round trip.
+
+4. **Verify file CONTENT on the VPS, not filenames.** A rename that lost its
+   content edits passes any `ls` check.
+
+5. **Order is: push (Mac) → pull (VPS) → verify → build.** Docker copies source
+   from the checkout at build time, so building before pulling silently rebuilds
+   the old code.
+
+---
+
+## Procedure
+
+### 1. Merge (on the Mac)
+
+```bash
+cd ~/Downloads/AIOStreams
+git status --short            # must be clean; stash or commit first
+git fetch upstream
+git merge upstream/main
+```
+
+Merge, don't rebase — the branch is public.
+
+### 2. Resolve conflicts
+
+Conflicts are almost always **registration lists** where both sides appended:
+
+| File | What to do |
+|---|---|
+| `packages/core/src/db/migrations/index.ts` | Keep both imports and both array entries. Ours last. |
+| `packages/core/src/db/index.ts` | Keep both export blocks. |
+| `packages/server/src/server.ts` | Keep both task registrations and both startup steps. |
+| `packages/server/src/routes/api/dashboard/index.ts` | Keep both imports and both `router.use(...)`. |
+| `packages/docs/.../environment-variables.mdx` | Take upstream's, then regenerate (step 4). |
+
+If upstream **moves** a file we also touch (they turned `dashboard.ts` into
+`dashboard/`), `git mv` our sibling file into the new location and fix its
+relative import depth.
+
+### 3. Check for id collisions
+
+```bash
+grep -h "id:" packages/core/src/db/migrations/*.ts | grep -oE "[0-9]+" | sort -n | uniq -d
+```
+
+Any output = a duplicate id = stop and renumber ours into the 9xx range.
+
+### 4. Regenerate and verify locally
+
+```bash
+pnpm install
+pnpm gen:env-docs
+pnpm run build          # exactly what the Dockerfile runs
+pnpm -F core test
+pnpm format
+```
+
+All four must pass. `pnpm run build` is the one that catches moved-file import
+errors.
+
+### 5. Commit — the step that has bitten us
+
+```bash
+git add -A
+git status               # READ THIS. Every file you touched should be staged.
+git commit
+git push
+```
+
+Then confirm the content really went in, not just renames:
+
+```bash
+git show --stat HEAD | head -20
+grep -h "id:" packages/core/src/db/migrations/09*.ts    # must show 901+
+```
+
+### 6. Deploy
+
+```bash
+git -C /opt/docker/apps/aiostreams-fork/AIOStreams pull
+```
+
+Verify content arrived:
+
+```bash
+grep -h "id:" /opt/docker/apps/aiostreams-fork/AIOStreams/packages/core/src/db/migrations/09*.ts
+```
+
+Then build:
+
+```bash
+cd /opt/docker && docker compose --profile aiostreams-fork up -d --build
+```
+
+### 7. Confirm
+
+```bash
+docker compose logs aiostreams-fork 2>&1 | grep -i "Applying migration"
+docker compose logs --tail 20 aiostreams-fork
+```
+
+New upstream migrations should apply by *their* names. Then open the subtitle
+dashboard and confirm existing jobs are still listed.
+
+---
+
+## If it goes wrong
+
+**Abort a merge in progress:**
+
+```bash
+git merge --abort
+```
+
+**Container crash-looping on a migration error:** stop it before investigating,
+or the logs scroll endlessly.
+
+```bash
+cd /opt/docker && docker compose stop aiostreams-fork
+```
+
+**Inspect the migration ledger** (the addon image is distroless — no shell, so
+use a throwaway container):
+
+```bash
+docker run --rm -v /opt/docker/data/aiostreams-fork:/data alpine:3.20 \
+  sh -c "apk add --no-cache sqlite >/dev/null 2>&1 && sqlite3 /data/db.sqlite \
+  'SELECT id, name FROM _migrations ORDER BY id;'"
+```
+
+Expected shape: upstream's 1..N, then ours at 901+. Nothing else.
+
+**Before any database edit:** stop the container, then back up. A clean shutdown
+checkpoints the WAL into `db.sqlite`, so the single file is enough:
+
+```bash
+cp /opt/docker/data/aiostreams-fork/db.sqlite ~/db.sqlite.bak-$(date +%F)
+```
+
+---
+
+## Fork-owned files
+
+Everything under `packages/core/src/subtitles/`, migrations `09xx_subtitle_*`,
+`db/repositories/subtitle-*`, `server/src/routes/api/subtitles.ts` and
+`dashboard/subtitles.ts`, `frontend/src/app/dashboard/subtitles/`, and the
+subtitle settings components. Upstream never touches these, so they rarely
+conflict — the conflicts are in the shared registration lists that point at them.
