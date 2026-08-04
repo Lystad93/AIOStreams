@@ -11,7 +11,8 @@ import {
 } from '../../debrid/index.js';
 import { Manifest, MetaPreview } from '../../db/schemas.js';
 import { formatBytes } from '../../formatters/utils.js';
-import { parseTorrentTitle, ParsedResult } from '@viren070/parse-torrent-title';
+import { ParsedResult } from '@viren070/parse-torrent-title';
+import { parseTorrentTitleCached } from '../../parser/title.js';
 import { normaliseTitle } from '../../parser/utils.js';
 import { token_set_ratio } from 'fuzzball';
 
@@ -47,7 +48,7 @@ interface ParsedCatalogItem {
 
 function parseCatalogItems(items: CatalogItem[]): ParsedCatalogItem[] {
   return items.map((item) => {
-    const parsed = parseTorrentTitle(item.name ?? '');
+    const parsed = parseTorrentTitleCached(item.name ?? '');
     const parsedTitle = parsed.title ?? item.name ?? '';
     return {
       item,

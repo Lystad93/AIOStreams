@@ -8,14 +8,12 @@ import {
   Cache,
   IdParser,
 } from '@aiostreams/core';
-import { stremioStreamRateLimiter } from '../../middlewares/ratelimit.js';
 import { trackResource } from '../../middlewares/analytics.js';
 
 const router: Router = Router();
 
 const logger = createLogger('server');
 
-router.use(stremioStreamRateLimiter);
 router.use(trackResource('stream'));
 
 interface StreamParams {

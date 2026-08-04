@@ -7,6 +7,8 @@ import {
   decryptString,
   Env,
   getSimpleTextHash,
+  isConfigUuid,
+  resolveConfigAlias,
   UserRepository,
 } from '@aiostreams/core';
 import {
@@ -152,11 +154,9 @@ router.get(
     }
 
     // Validate UUID
-    const uuidRegex =
-      /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
     let uuid: string;
-    if (!uuidRegex.test(uuidOrAlias)) {
-      const alias = appConfig.api.aliasedConfigurations[uuidOrAlias];
+    if (!isConfigUuid(uuidOrAlias)) {
+      const alias = await resolveConfigAlias(uuidOrAlias);
       if (alias) {
         uuid = alias.uuid;
       } else {

@@ -8,7 +8,7 @@ const REDACT_CENSOR = '<redacted>';
  * regex or filter description is left alone.
  */
 const URL_PARAM_PATTERN =
-  /([?&#][^&\s'"=#]*(?:apikey|api_key|token|secret|password|passwd|passkey)[^&\s'"=#]*=)([^&\s'"#]+)/gi;
+  /([?&#][^&\s'"=#]*(?:apikey|api_key|token|secret|password|passwd|passkey|code)[^&\s'"=#]*=)([^&\s'"#]+)/gi;
 /**
  * The password half of `scheme://user:password@host` userinfo. The username is
  * kept

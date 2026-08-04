@@ -44,6 +44,10 @@ import { UserData } from '@aiostreams/core';
 import { redactPresetOptions } from '@/lib/preset-credentials';
 import { useSave } from '@/context/save';
 import { FiExternalLink } from 'react-icons/fi';
+import { ProfileCard } from './profile-card';
+import { useSession } from '@/context/session';
+import { useQuery } from '@tanstack/react-query';
+import { configProfilesQuery } from '@/lib/queries';
 
 // Reusable modal option button component
 interface ModalOptionButtonProps {
@@ -354,11 +358,9 @@ function CompatibleClientLogos() {
 }
 
 interface InstallCardProps {
-  baseUrl: string;
-  uuid: string;
-  encryptedPassword: string;
   encodedManifest: string;
   manifestUrl: string;
+  usingAlias: boolean;
   onCopyManifestUrl: () => void;
   onOpenChillio: () => void;
   onOpenSeanime: () => void;
@@ -375,11 +377,9 @@ interface InstallCardProps {
 }
 
 function InstallCard({
-  baseUrl,
-  uuid,
-  encryptedPassword,
   encodedManifest,
   manifestUrl,
+  usingAlias,
   onCopyManifestUrl,
   onOpenChillio,
   onOpenSeanime,
@@ -424,7 +424,7 @@ function InstallCard({
                 <Button
                   onClick={() =>
                     window.open(
-                      `stremio://${baseUrl.replace(/^https?:\/\//, '')}/stremio/${uuid}/${encryptedPassword}/manifest.json`
+                      manifestUrl.replace(/^https?:\/\//, 'stremio://')
                     )
                   }
                   intent="primary"
@@ -448,7 +448,7 @@ function InstallCard({
 
             <div className="space-y-1.5 lg:border-l lg:border-gray-700/50 lg:pl-8">
               <label className="text-xs font-medium text-gray-400 ml-1">
-                Direct Manifest URL
+                {usingAlias ? 'Manifest URL (alias)' : 'Direct Manifest URL'}
               </label>
               <div className="flex items-center gap-2">
                 <TextInput
@@ -470,6 +470,8 @@ function InstallCard({
               <p className="text-xs text-gray-500 ml-1">
                 Install manually to Stremio or any Stremio addon compatible
                 client.
+                {usingAlias &&
+                  ' Your profile alias stands in for the UUID and password; the long URL still works.'}
               </p>
               <CompatibleClientLogos />
             </div>
@@ -1288,6 +1290,13 @@ function Content() {
     string[]
   >([]);
   const { status } = useStatus();
+  const { user: sessionUser } = useSession();
+  const { data: profileData } = useQuery({
+    ...configProfilesQuery,
+    enabled: Boolean(sessionUser),
+  });
+  const profileAlias =
+    profileData?.profiles.find((p) => p.uuid === uuid)?.alias ?? null;
   const baseUrl = status?.settings?.baseUrl || window.location.origin;
   const hasStatus = !!status;
   const searchApiDisabled = status?.settings?.searchApiDisabled ?? false;
@@ -1482,11 +1491,17 @@ function Content() {
   };
   const uuidRegex =
     /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
-  const manifestUrl = uuid
-    ? uuidRegex.test(uuid)
-      ? `${baseUrl}/stremio/${uuid}/${encryptedPassword}/manifest.json`
-      : `${baseUrl}/stremio/u/${uuid}/manifest.json`
-    : '';
+  // An alias stands in for the uuid and password, so prefer it when there is one.
+  const aliasForInstall = !uuid
+    ? null
+    : uuidRegex.test(uuid)
+      ? (profileAlias ?? null)
+      : uuid;
+  const manifestUrl = !uuid
+    ? ''
+    : aliasForInstall
+      ? `${baseUrl}/stremio/u/${aliasForInstall}/manifest.json`
+      : `${baseUrl}/stremio/${uuid}/${encryptedPassword}/manifest.json`;
   const chillLinkUrl = uuid
     ? `${baseUrl}/chilllink/${uuid}/${encryptedPassword}`
     : '';
@@ -1691,11 +1706,9 @@ function Content() {
             />
 
             <InstallCard
-              baseUrl={baseUrl}
-              uuid={uuid}
-              encryptedPassword={encryptedPassword ?? ''}
               encodedManifest={encodedManifest}
               manifestUrl={manifestUrl}
+              usingAlias={!!aliasForInstall}
               onCopyManifestUrl={copyManifestUrl}
               onOpenChillio={chillLinkModal.open}
               onOpenSeanime={seanimeModal.open}
@@ -1718,6 +1731,8 @@ function Content() {
                   : undefined
               }
             />
+
+            <ProfileCard />
           </>
         )}
 

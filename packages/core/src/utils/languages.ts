@@ -49,6 +49,73 @@ const LANGUAGE_BY_NAME = new Map<string, string>(
   LANGUAGES.map((lang) => [lang.toLowerCase(), lang])
 );
 
+/**
+ * Every english_name spelling in FULL_LANGUAGE_MAPPING
+ */
+const ENTRY_BY_NAME = new Map<string, (typeof FULL_LANGUAGE_MAPPING)[number]>();
+for (const entry of FULL_LANGUAGE_MAPPING) {
+  const names = [
+    entry.internal_english_name,
+    entry.english_name,
+    ...entry.english_name.split(';').map((name) => name.split('(')[0]),
+  ];
+  for (const name of names) {
+    const key = name?.trim().toLowerCase();
+    if (!key) continue;
+    const existing = ENTRY_BY_NAME.get(key);
+    if (!existing || (!existing.flag_priority && entry.flag_priority)) {
+      ENTRY_BY_NAME.set(key, entry);
+    }
+  }
+}
+
+/**
+ * Region qualifiers that are not ISO 3166-1 codes. `419` is the UN M49 code for
+ * Latin America, which mapLanguageCode routes on.
+ */
+const REGION_ALIASES: Record<string, string> = {
+  'latin america': '419',
+  latam: '419',
+  la: '419',
+};
+
+const QUALIFIER_PATTERN = /^(.*\S)\s*\(([^()]+)\)$/;
+const MAX_INPUT_LENGTH = 64;
+
+function toSupportedLanguage(
+  entry: (typeof FULL_LANGUAGE_MAPPING)[number] | undefined
+): string | undefined {
+  if (!entry) return undefined;
+  const candidate = getLanguageDisplayName(entry);
+  return LANGUAGES.includes(candidate as (typeof LANGUAGES)[number])
+    ? candidate
+    : undefined;
+}
+
+/** Resolve a BCP 47 / ISO 639 code to its entry. */
+function findEntryByCode(
+  value: string
+): (typeof FULL_LANGUAGE_MAPPING)[number] | undefined {
+  const parts = mapLanguageCode(normaliseLangCode(value))
+    .toLowerCase()
+    .split('-');
+
+  const possible = FULL_LANGUAGE_MAPPING.filter((lang) => {
+    if (parts.length === 2) {
+      return (
+        lang.iso_639_1?.toLowerCase() === parts[0] &&
+        lang.iso_3166_1?.toLowerCase() === parts[1]
+      );
+    }
+    return (
+      lang.iso_639_1?.toLowerCase() === parts[0] ||
+      lang.iso_639_2?.toLowerCase() === parts[0]
+    );
+  });
+
+  return possible.find((lang) => lang.flag_priority) ?? possible[0];
+}
+
 // Public utilities
 
 /** Normalise well-known BCP 47 variants to the canonical code used in FULL_LANGUAGE_MAPPING. */
@@ -89,35 +156,45 @@ export function convertLangCodeToName(code: string): string | undefined {
  */
 export function normaliseLanguage(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
-  const raw = value.trim();
-  if (!raw) return undefined;
+  let raw = value.trim();
+  if (raw.length > MAX_INPUT_LENGTH) return undefined;
 
-  const byName = LANGUAGE_BY_NAME.get(raw.toLowerCase());
-  if (byName) return byName;
+  // each pass strips one trailing qualifier, so this always terminates
+  while (raw) {
+    const byName = LANGUAGE_BY_NAME.get(raw.toLowerCase());
+    if (byName) return byName;
 
-  const code = normaliseLangCode(raw);
-  const parts = code.split('-');
-
-  const possible = FULL_LANGUAGE_MAPPING.filter((lang) => {
-    if (parts.length === 2) {
-      return (
-        lang.iso_639_1?.toLowerCase() === parts[0] &&
-        lang.iso_3166_1?.toLowerCase() === parts[1]
-      );
-    }
-    return (
-      lang.iso_639_1?.toLowerCase() === parts[0] ||
-      lang.iso_639_2?.toLowerCase() === parts[0]
+    const byFullName = toSupportedLanguage(
+      ENTRY_BY_NAME.get(raw.toLowerCase())
     );
-  });
+    if (byFullName) return byFullName;
 
-  const chosen = possible.find((lang) => lang.flag_priority) ?? possible[0];
-  if (!chosen) return undefined;
+    const byCode = toSupportedLanguage(findEntryByCode(raw));
+    if (byCode) return byCode;
 
-  const candidate = getLanguageDisplayName(chosen);
-  return LANGUAGES.includes(candidate as (typeof LANGUAGES)[number])
-    ? candidate
-    : undefined;
+    const qualified = QUALIFIER_PATTERN.exec(raw);
+    if (!qualified) return undefined;
+
+    const base = qualified[1].trim();
+    const qualifier = qualified[2].trim();
+    const baseCode =
+      ENTRY_BY_NAME.get(base.toLowerCase())?.iso_639_1 ??
+      findEntryByCode(base)?.iso_639_1;
+    const region =
+      REGION_ALIASES[qualifier.toLowerCase()] ??
+      (/^[a-z]{2}$/i.test(qualifier) ? qualifier : undefined);
+
+    if (baseCode && region) {
+      const byRegion = toSupportedLanguage(
+        findEntryByCode(`${baseCode}-${region}`)
+      );
+      if (byRegion) return byRegion;
+    }
+
+    raw = base;
+  }
+
+  return undefined;
 }
 
 // Languages where the ISO 639-1 code is not sufficient to disambiguate between multiple languages with the same name

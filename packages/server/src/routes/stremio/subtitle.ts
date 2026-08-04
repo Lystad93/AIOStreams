@@ -5,13 +5,11 @@ import {
   createLogger,
   StremioTransformer,
 } from '@aiostreams/core';
-import { stremioSubtitleRateLimiter } from '../../middlewares/ratelimit.js';
 import { trackResource } from '../../middlewares/analytics.js';
 
 const logger = createLogger('server');
 const router: Router = Router();
 
-router.use(stremioSubtitleRateLimiter);
 router.use(trackResource('subtitle'));
 
 interface SubtitleParams {

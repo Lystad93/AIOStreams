@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { ParsedResult, parseTorrentTitle } from '@viren070/parse-torrent-title';
+import { ParsedResult } from '@viren070/parse-torrent-title';
+import { parseTorrentTitleCached } from '../../parser/title.js';
 import { downloadManager, NzbTooLargeError } from '../../utils/index.js';
 import { getDataFolder } from '../../utils/general.js';
 import { createLogger } from '../../logging/logger.js';
@@ -786,7 +787,7 @@ export async function selectStreamFile(
   const totalSize = files.reduce((s, f) => s + f.size, 0);
   const parsedFiles = new Map<string, ParsedResult>();
   for (const s of [title, ...files.map((f) => f.name ?? '')]) {
-    if (!parsedFiles.has(s)) parsedFiles.set(s, parseTorrentTitle(s));
+    if (!parsedFiles.has(s)) parsedFiles.set(s, parseTorrentTitleCached(s));
   }
 
   const nzbInfo: NZB = {

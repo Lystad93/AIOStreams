@@ -6,14 +6,12 @@ import {
   StremioTransformer,
 } from '@aiostreams/core';
 
-import { stremioMetaRateLimiter } from '../../middlewares/ratelimit.js';
 import { trackResource } from '../../middlewares/analytics.js';
 import { createResponse } from '../../utils/responses.js';
 
 const logger = createLogger('server');
 const router: Router = Router();
 
-router.use(stremioMetaRateLimiter);
 router.use(trackResource('meta'));
 
 interface MetaParams {

@@ -16,6 +16,7 @@ import { usenetLatency } from './0015_usenet_latency.js';
 import { usenetIndexerMetrics } from './0016_usenet_indexer_metrics.js';
 import { streamSessions } from './0017_stream_sessions.js';
 import { taskState } from './0018_task_state.js';
+import { configProfiles } from './0019_config_profiles.js';
 // Fork migrations live in a reserved 900+ range, deliberately far above
 // anything upstream will reach. Sequential ids collided the first time
 // upstream added a migration (its 0017/0018 vs ours), and because the runner
@@ -48,6 +49,7 @@ export const MIGRATIONS: readonly Migration[] = [
   usenetIndexerMetrics,
   streamSessions,
   taskState,
+  configProfiles,
   // Fork migrations last: the runner applies in ARRAY order, not id order.
   subtitleJobs,
   subtitleJobDuration,

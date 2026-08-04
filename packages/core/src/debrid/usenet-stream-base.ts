@@ -28,7 +28,8 @@ import {
   DebridFailureCache,
   convertStatusCodeToError,
 } from './base.js';
-import { ParsedResult, parseTorrentTitle } from '@viren070/parse-torrent-title';
+import { ParsedResult } from '@viren070/parse-torrent-title';
+import { parseTorrentTitleCached } from '../parser/title.js';
 import z, { ZodError } from 'zod';
 import { createClient, WebDAVClient, FileStat } from 'webdav';
 import { fetch } from 'undici';
@@ -1258,7 +1259,7 @@ export abstract class UsenetStreamService implements UsenetDebridService {
       // Parse all file names for matching
       const allStrings = [jobName, ...debridFiles.map((f) => f.name ?? '')];
       const parseResults: ParsedResult[] = allStrings.map((string) =>
-        parseTorrentTitle(string)
+        parseTorrentTitleCached(string)
       );
       const parsedFiles = new Map<string, ParsedResult>();
       for (const [index, result] of parseResults.entries()) {
@@ -1392,7 +1393,7 @@ export abstract class UsenetStreamService implements UsenetDebridService {
       const title = playbackInfo.title ?? '';
       const allStrings = [title, ...debridFiles.map((f) => f.name ?? '')];
       const parseResults: ParsedResult[] = allStrings.map((string) =>
-        parseTorrentTitle(string)
+        parseTorrentTitleCached(string)
       );
       const parsedFiles = new Map<string, ParsedResult>();
       for (const [index, result] of parseResults.entries()) {

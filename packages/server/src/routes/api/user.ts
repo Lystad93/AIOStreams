@@ -6,7 +6,10 @@ import {
   constants,
   createLogger,
   encryptString,
+  getConfigAccessKey,
   hmac,
+  Permission,
+  sessionHasPermission,
   UserRepository,
   type UserAnalyticsRange,
 } from '@aiostreams/core';
@@ -139,6 +142,22 @@ router.post('/', async (req, res, next) => {
         constants.ErrorCode.MISSING_REQUIRED_FIELDS,
         undefined,
         'config and password are required'
+      )
+    );
+    return;
+  }
+  // Only meaningful while the config-write gate is active; with it off, config
+  // creation is public and there is no session to check.
+  if (
+    getConfigAccessKey() &&
+    req.user &&
+    !sessionHasPermission(req.user, Permission.CreateConfig)
+  ) {
+    next(
+      new APIError(
+        constants.ErrorCode.FORBIDDEN,
+        undefined,
+        'Your account is not allowed to create configurations'
       )
     );
     return;

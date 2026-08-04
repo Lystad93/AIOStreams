@@ -1566,6 +1566,12 @@ const StatusResponseSchema = z.object({
     featuredTemplateIds: z.array(z.string()).optional(),
     alternateDesign: z.boolean(),
     protected: z.boolean(),
+    oidc: z.object({
+      enabled: z.boolean(),
+      buttonLabel: z.string(),
+      autoRedirect: z.boolean(),
+      localLoginEnabled: z.boolean(),
+    }),
     regexAccess: z.object({
       level: z.enum(['none', 'trusted', 'all']),
       patterns: z.array(z.string()),

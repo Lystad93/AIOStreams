@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  byteSize,
   cacheTtlMap,
   nonNegativeInt,
   positiveInt,
@@ -175,6 +176,16 @@ export const resourcesSchema = {
       requiresRestart: false,
       secret: false,
     },
+    maxConcurrent: {
+      schema: positiveInt,
+      default: 50,
+      label: 'Max concurrent background requests',
+      description:
+        'Maximum resource requests allowed to keep running after the client has already timed out. Beyond this, an abandoned request is cancelled instead of being left to warm the cache, which bounds how many connections a client that retries without backoff can tie up.',
+      env: 'MAX_BACKGROUND_RESOURCE_REQUESTS',
+      requiresRestart: false,
+      secret: false,
+    },
   },
   cache: {
     defaultMaxSize: {
@@ -193,6 +204,16 @@ export const resourcesSchema = {
       description: 'Maximum number of items in the shared SQL cache.',
       env: 'SQL_CACHE_MAX_SIZE',
       requiresRestart: true,
+      secret: false,
+    },
+    maxValueBytes: {
+      schema: byteSize,
+      default: 2 * 1000 * 1000,
+      label: 'Max cached value size',
+      description:
+        'Largest single value written to the Redis or SQL cache (`0` disables the limit). Oversized entries are skipped rather than stored. A skipped entry is recomputed on each request, so raising this trades memory for CPU. Accepts plain bytes or `2MB`-style strings.',
+      env: 'MAX_CACHE_VALUE_BYTES',
+      requiresRestart: false,
       secret: false,
     },
     manifest: {
@@ -217,6 +238,19 @@ export const resourcesSchema = {
         env: 'MANIFEST_CACHE_MAX_SIZE',
         requiresRestart: true,
         secret: false,
+      },
+      failureTtl: {
+        schema: nonNegativeInt,
+        default: 60,
+        label: 'Manifest failure cache TTL (s)',
+        description:
+          'How long a failed manifest fetch is remembered (seconds; 0 disables). Without this, an addon whose manifest has never succeeded is re-fetched on every request and costs a full manifest timeout each time. A successful fetch clears the entry immediately, and saving a configuration always re-checks.',
+        env: 'MANIFEST_FAILURE_CACHE_TTL',
+        requiresRestart: false,
+        secret: false,
+        ui: {
+          min: 0,
+        },
       },
     },
     subtitle: {

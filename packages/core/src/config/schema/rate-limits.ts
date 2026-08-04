@@ -136,4 +136,10 @@ export const rateLimitsSchema = {
     envPrefix: 'LOGIN',
     label: 'login',
   }),
+  oidc: rateLimit({
+    windowDefault: 300,
+    maxDefault: 20,
+    envPrefix: 'OIDC',
+    label: 'SSO login',
+  }),
 } as const satisfies RuntimeConfigSection;

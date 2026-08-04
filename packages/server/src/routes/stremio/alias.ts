@@ -1,12 +1,6 @@
-import {
-  APIError,
-  config as appConfig,
-  constants,
-  createLogger,
-} from '@aiostreams/core';
+import { APIError, constants, resolveConfigAlias } from '@aiostreams/core';
 import { Router, Request, Response } from 'express';
 
-const logger = createLogger('server');
 const router: Router = Router();
 
 interface AliasParams {
@@ -16,20 +10,19 @@ interface AliasParams {
 
 router.get(
   '/:alias/*wildcardPath',
-  (req: Request<AliasParams>, res: Response) => {
+  async (req: Request<AliasParams>, res: Response) => {
     const { alias } = req.params;
     let { wildcardPath } = req.params;
     if (Array.isArray(wildcardPath)) {
       wildcardPath = wildcardPath.join('/');
     }
 
-    const configuration = appConfig.api.aliasedConfigurations[alias];
-    if (!configuration || !configuration.uuid || !configuration.password) {
+    const configuration = await resolveConfigAlias(alias);
+    if (!configuration) {
       throw new APIError(constants.ErrorCode.USER_INVALID_DETAILS);
     }
 
-    const redirectPath = `/stremio/${configuration.uuid}/${configuration.password}${wildcardPath ? `/${wildcardPath}` : ''}`;
-    logger.debug(`Redirecting alias ${alias} to ${redirectPath}`);
+    const redirectPath = `/stremio/${configuration.uuid}/${configuration.encryptedPassword}${wildcardPath ? `/${wildcardPath}` : ''}`;
 
     res.redirect(redirectPath);
   }

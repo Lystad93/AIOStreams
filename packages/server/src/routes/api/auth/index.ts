@@ -5,20 +5,35 @@ import {
   createLogger,
   validateCredentials,
   isAdminUser,
+  getEffectivePermissions,
+  config as appConfig,
 } from '@aiostreams/core';
-import { loginRateLimiter } from '../../middlewares/ratelimit.js';
+import { loginRateLimiter } from '../../../middlewares/ratelimit.js';
 import {
   attachSession,
   setSessionCookie,
   clearSessionCookie,
-} from '../../middlewares/auth.js';
-import { createResponse } from '../../utils/responses.js';
+} from '../../../middlewares/auth.js';
+import { createResponse } from '../../../utils/responses.js';
+import oidcRouter from './oidc.js';
 
 const router: Router = Router();
 const logger = createLogger('server');
 
+router.use(oidcRouter);
+
 // POST /auth/login — validate credentials, set the session cookie.
 router.post('/login', loginRateLimiter, (req, res, next) => {
+  if (!appConfig.oidc.allowLocalLogin) {
+    next(
+      new APIError(
+        constants.ErrorCode.FORBIDDEN,
+        undefined,
+        'Password login is disabled on this instance'
+      )
+    );
+    return;
+  }
   const { username, password } = req.body ?? {};
   if (typeof username !== 'string' || typeof password !== 'string') {
     next(
@@ -43,12 +58,18 @@ router.post('/login', loginRateLimiter, (req, res, next) => {
     return;
   }
 
-  setSessionCookie(req, res, username);
+  const permissions = [...getEffectivePermissions(username)];
+  setSessionCookie(res, { username, permissions, source: 'password' });
   res.status(200).json(
     createResponse({
       success: true,
       detail: 'Logged in successfully',
-      data: { username, isAdmin: isAdminUser(username) },
+      data: {
+        username,
+        isAdmin: isAdminUser(username),
+        permissions,
+        source: 'password',
+      },
     })
   );
 });
@@ -73,7 +94,12 @@ router.get('/me', attachSession, (req, res, next) => {
   res.status(200).json(
     createResponse({
       success: true,
-      data: { username: req.user.username, isAdmin: req.user.isAdmin },
+      data: {
+        username: req.user.username,
+        isAdmin: req.user.isAdmin,
+        permissions: req.user.permissions,
+        source: req.user.source,
+      },
     })
   );
 });

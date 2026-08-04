@@ -27,6 +27,7 @@ import {
   usenetSchema,
   streamsSchema,
   releaseBlocklistSchema,
+  oidcSchema,
   subtitlesSchema,
 } from './schema/index.js';
 
@@ -51,6 +52,7 @@ export const runtimeSchemas = {
   usenet: usenetSchema,
   streams: streamsSchema,
   releaseBlocklist: releaseBlocklistSchema,
+  oidc: oidcSchema,
   subtitles: subtitlesSchema,
 } as const;
 

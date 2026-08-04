@@ -7,6 +7,7 @@ import { login, APIError } from '@/lib/api';
 import { toast } from 'sonner';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { sessionQuery } from '@/lib/queries';
+import { useStatus } from '@/context/status';
 
 /**
  * Sanitises a `?next=` redirect target. Only same-origin absolute paths are
@@ -19,7 +20,12 @@ export function safeNext(raw: string | null | undefined): string {
   if (!raw) return '/dashboard/';
   try {
     const decoded = decodeURIComponent(raw);
-    if (decoded.startsWith('/') && !decoded.startsWith('//')) {
+    // Browsers normalise `\` to `/`, so `/\host` is protocol-relative too.
+    if (
+      decoded.startsWith('/') &&
+      !decoded.startsWith('//') &&
+      !decoded.startsWith('/\\')
+    ) {
       return decoded;
     }
   } catch {
@@ -28,18 +34,66 @@ export function safeNext(raw: string | null | undefined): string {
   return '/dashboard/';
 }
 
+/** Login failures arriving as `?error=`, including every OIDC refusal reason. */
+const LOGIN_ERRORS: Record<string, { title: string; description?: string }> = {
+  forbidden: {
+    title: 'Your account does not have admin access.',
+    description: 'Sign in with an admin account to continue.',
+  },
+  oidc_disabled: { title: 'SSO login is not enabled on this instance.' },
+  oidc_not_configured: {
+    title: 'SSO is not fully configured.',
+    description: 'The instance owner needs to set the issuer and client ID.',
+  },
+  oidc_discovery_failed: {
+    title: 'Could not reach the SSO provider.',
+    description: 'It may be down or the issuer URL may be wrong.',
+  },
+  oidc_state_invalid: {
+    title: 'That login attempt expired.',
+    description: 'Please try signing in again.',
+  },
+  oidc_denied: {
+    title: 'The SSO provider denied the login request.',
+  },
+  oidc_exchange_failed: {
+    title: 'The SSO provider rejected the login.',
+    description: 'Check the client ID, secret, and redirect URI.',
+  },
+  oidc_claims_invalid: {
+    title: 'The SSO provider did not return the expected user details.',
+    description: 'Check the configured username claim.',
+  },
+  oidc_username_conflict: {
+    title: 'That SSO username collides with a local account.',
+    description: 'The instance owner needs to set an SSO username prefix.',
+  },
+  oidc_no_permissions: {
+    title: 'Your account is not mapped to any permissions.',
+    description: 'Ask the instance owner to map one of your groups.',
+  },
+};
+
 export function LoginPage() {
   const qc = useQueryClient();
+  const { status } = useStatus();
   const [username, setUsername] = React.useState('');
   const [password, setPassword] = React.useState('');
 
   const params = new URLSearchParams(window.location.search);
 
+  const initialError = React.useRef(params.get('error')).current;
+
+  const oidc = status?.settings.oidc;
+  const localLoginEnabled = oidc?.localLoginEnabled !== false;
+  const ssoStartUrl = `/api/v1/auth/oidc/start?next=${encodeURIComponent(
+    safeNext(params.get('next'))
+  )}`;
+
   React.useEffect(() => {
-    if (params.get('error') === 'forbidden') {
-      toast.error('Your account does not have admin access.', {
-        description: 'Sign in with an admin account to continue.',
-      });
+    const entry = initialError ? LOGIN_ERRORS[initialError] : undefined;
+    if (entry) {
+      toast.error(entry.title, { description: entry.description });
       params.delete('error');
       const search = params.toString();
       window.history.replaceState(
@@ -49,6 +103,14 @@ export function LoginPage() {
       );
     }
   }, []);
+
+  // `?local=1` is the documented recovery path. Skipping when the navigation
+  // carried an error stops a refused user bouncing back to the provider forever.
+  React.useEffect(() => {
+    if (!oidc?.enabled || !oidc.autoRedirect) return;
+    if (params.has('local') || initialError) return;
+    window.location.assign(ssoStartUrl);
+  }, [oidc?.enabled, oidc?.autoRedirect]);
 
   const { mutate, isPending } = useMutation({
     mutationFn: ({
@@ -93,45 +155,69 @@ export function LoginPage() {
           <p className="text-sm text-[--muted] text-center">
             Log in to access this AIOStreams instance.
           </p>
-          <p className="text-xs text-[--muted] text-center">
-            Use a username and password from your instance's{' '}
-            <code className="text-[--foreground]">AIOSTREAMS_AUTH</code>{' '}
-            environment variable
-          </p>
+          {localLoginEnabled && (
+            <p className="text-xs text-[--muted] text-center">
+              Use a username and password from your instance's{' '}
+              <code className="text-[--foreground]">AIOSTREAMS_AUTH</code>{' '}
+              environment variable
+            </p>
+          )}
         </div>
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <TextInput
-            label="Username"
-            id="username"
-            name="username"
-            autoComplete="username"
-            autoCapitalize="none"
-            spellCheck={false}
-            value={username}
-            required
-            autoFocus
-            placeholder="Enter your username"
-            onValueChange={setUsername}
-          />
-          <PasswordInput
-            label="Password"
-            id="password"
-            name="password"
-            value={password}
-            required
-            placeholder="Enter your password"
-            onValueChange={setPassword}
-          />
-          <Button
-            type="submit"
-            intent="primary"
-            loading={isPending}
-            disabled={isPending}
-            className="w-full"
-          >
-            Sign in
-          </Button>
-        </form>
+        {oidc?.enabled && (
+          <div className="flex flex-col gap-4 mb-4">
+            {/* Navigation rather than fetch: this 302s cross-origin, and the
+                state cookie has to be set by a document request. */}
+            <Button
+              intent="primary-outline"
+              className="w-full"
+              onClick={() => window.location.assign(ssoStartUrl)}
+            >
+              {oidc.buttonLabel}
+            </Button>
+            {localLoginEnabled && (
+              <div className="flex items-center gap-3">
+                <span className="h-px flex-1 bg-[--border]" />
+                <span className="text-xs text-[--muted]">or</span>
+                <span className="h-px flex-1 bg-[--border]" />
+              </div>
+            )}
+          </div>
+        )}
+        {localLoginEnabled && (
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <TextInput
+              label="Username"
+              id="username"
+              name="username"
+              autoComplete="username"
+              autoCapitalize="none"
+              spellCheck={false}
+              value={username}
+              required
+              autoFocus
+              placeholder="Enter your username"
+              onValueChange={setUsername}
+            />
+            <PasswordInput
+              label="Password"
+              id="password"
+              name="password"
+              value={password}
+              required
+              placeholder="Enter your password"
+              onValueChange={setPassword}
+            />
+            <Button
+              type="submit"
+              intent="primary"
+              loading={isPending}
+              disabled={isPending}
+              className="w-full"
+            >
+              Sign in
+            </Button>
+          </form>
+        )}
       </Card>
     </main>
   );

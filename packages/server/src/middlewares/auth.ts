@@ -6,11 +6,21 @@ import {
   verifySession,
   issueSession,
   getConfigAccessKey,
-  hasPermission,
+  sessionHasPermission,
   Permission,
+  SessionSource,
+  encodeSignedPayload,
+  decodeSignedPayload,
 } from '@aiostreams/core';
 
 export const SESSION_COOKIE = 'aiostreams.session';
+
+/**
+ * Whether to set the `Secure` cookie attribute. Derived from BASE_URL.
+ */
+export function cookieSecure(): boolean {
+  return appConfig.bootstrap.baseUrl?.startsWith('https://') ?? false;
+}
 
 function readCookie(req: Request, name: string): string | undefined {
   const header = req.headers.cookie;
@@ -27,14 +37,16 @@ function readCookie(req: Request, name: string): string | undefined {
 }
 
 export function setSessionCookie(
-  req: Request,
   res: Response,
-  username: string
+  user: { username: string; permissions?: Permission[]; source?: SessionSource }
 ): void {
-  const token = issueSession(username);
+  const token = issueSession(user.username, {
+    permissions: user.permissions,
+    source: user.source,
+  });
   res.cookie(SESSION_COOKIE, token, {
     httpOnly: true,
-    secure: req.secure,
+    secure: cookieSecure(),
     sameSite: 'strict',
     path: '/',
     maxAge: appConfig.api.sessionTtlSeconds * 1000,
@@ -43,6 +55,67 @@ export function setSessionCookie(
 
 export function clearSessionCookie(res: Response): void {
   res.clearCookie(SESSION_COOKIE, { path: '/' });
+}
+
+export const OIDC_STATE_COOKIE = 'aiostreams.oidc';
+const OIDC_COOKIE_PATH = '/api/v1/auth/oidc';
+const OIDC_STATE_TTL_SECONDS = 600;
+
+export interface OidcStateBlob {
+  /** state */
+  st: string;
+  /** nonce */
+  n: string;
+  /** PKCE code verifier */
+  v: string;
+  /** post-login redirect target */
+  nx: string;
+  exp: number;
+}
+
+/**
+ * CSRF binding for one in-flight login.
+ *
+ * sameSite must be 'lax': the callback is a top-level navigation from the
+ * provider's origin, and a 'strict' cookie is withheld from it.
+ */
+export function setOidcStateCookie(
+  res: Response,
+  blob: Omit<OidcStateBlob, 'exp'>
+): void {
+  const payload: OidcStateBlob = {
+    ...blob,
+    exp: Math.floor(Date.now() / 1000) + OIDC_STATE_TTL_SECONDS,
+  };
+  res.cookie(OIDC_STATE_COOKIE, encodeSignedPayload(payload), {
+    httpOnly: true,
+    secure: cookieSecure(),
+    sameSite: 'lax',
+    path: OIDC_COOKIE_PATH,
+    maxAge: OIDC_STATE_TTL_SECONDS * 1000,
+  });
+}
+
+export function readOidcStateCookie(req: Request): OidcStateBlob | null {
+  const blob = decodeSignedPayload<OidcStateBlob>(
+    readCookie(req, OIDC_STATE_COOKIE)
+  );
+  if (!blob) return null;
+  if (
+    typeof blob.st !== 'string' ||
+    typeof blob.n !== 'string' ||
+    typeof blob.v !== 'string' ||
+    typeof blob.exp !== 'number' ||
+    blob.exp < Math.floor(Date.now() / 1000)
+  ) {
+    return null;
+  }
+  return blob;
+}
+
+export function clearOidcStateCookie(res: Response): void {
+  // The path must match the one it was set with or this is a no-op.
+  res.clearCookie(OIDC_STATE_COOKIE, { path: OIDC_COOKIE_PATH });
 }
 
 /**
@@ -56,7 +129,7 @@ export function attachSession(
 ): void {
   const session = verifySession(readCookie(req, SESSION_COOKIE));
   if (session) {
-    req.user = { username: session.username, isAdmin: session.isAdmin };
+    req.user = session;
   }
   next();
 }
@@ -92,7 +165,7 @@ export function requireSession(
   if (!req.user) {
     const session = verifySession(readCookie(req, SESSION_COOKIE));
     if (session) {
-      req.user = { username: session.username, isAdmin: session.isAdmin };
+      req.user = session;
     }
   }
   if (req.user) {
@@ -120,7 +193,7 @@ export function requirePermission(permission: Permission) {
         return;
       }
       if (!res.headersSent && req.user) {
-        if (hasPermission(req.user.username, permission)) {
+        if (sessionHasPermission(req.user, permission)) {
           next();
           return;
         }

@@ -19,7 +19,7 @@ import {
 } from '../debrid/index.js';
 import { processTorrents } from '../builtins/utils/debrid.js';
 import { StreamContext } from '../streams/context.js';
-import { parseTorrentTitle } from '@viren070/parse-torrent-title';
+import { parseTorrentTitleCached } from '../parser/title.js';
 import { PresetManager } from '../presets/presetManager.js';
 
 const logger = createLogger('serviceWrapper');
@@ -552,8 +552,8 @@ async function buildDebridStreams(
         debridStream.parsedFile
       ) {
         // Re-parse the new filename and folder name to extract title/season/episode info
-        const fileParsed = parseTorrentTitle(debridStream.filename);
-        const folderParsed = parseTorrentTitle(debridStream.folderName);
+        const fileParsed = parseTorrentTitleCached(debridStream.filename);
+        const folderParsed = parseTorrentTitleCached(debridStream.folderName);
 
         const seasons = fileParsed.seasons?.length
           ? fileParsed.seasons

@@ -1,4 +1,5 @@
 export { default as userApi } from './user.js';
+export { default as profilesApi } from './profiles.js';
 export { default as healthApi } from './health.js';
 export { default as statusApi } from './status.js';
 export { default as formatApi } from './format.js';
@@ -11,7 +12,7 @@ export { default as animeApi } from './anime.js';
 export { default as proxyApi } from './proxy.js';
 export { default as templatesApi } from './templates.js';
 export { default as syncApi } from './sync.js';
-export { default as authApi } from './auth.js';
+export { default as authApi } from './auth/index.js';
 export { default as dashboardApi } from './dashboard/index.js';
 export { default as usenetApi } from './usenet.js';
 export { default as subtitlesApi } from './subtitles.js';

@@ -1,5 +1,5 @@
 import 'express';
-import { UserData } from '@aiostreams/core';
+import { UserData, SessionUser } from '@aiostreams/core';
 import type { RateLimitInfo } from 'express-rate-limit';
 
 declare global {
@@ -9,7 +9,7 @@ declare global {
       userIp?: string;
       requestIp?: string;
       uuid?: string;
-      user?: { username: string; isAdmin: boolean };
+      user?: SessionUser;
       rateLimit?: RateLimitInfo;
     }
   }

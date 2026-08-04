@@ -26,6 +26,17 @@ export enum ErrorCode {
   BAD_REQUEST = 'BAD_REQUEST',
   UNAUTHORIZED = 'UNAUTHORIZED',
   FORBIDDEN = 'FORBIDDEN',
+  // Kept distinct rather than collapsed into UNAUTHORIZED: each has its own
+  // operator remediation, surfaced as a `?error=` code on the login page.
+  OIDC_DISABLED = 'OIDC_DISABLED',
+  OIDC_NOT_CONFIGURED = 'OIDC_NOT_CONFIGURED',
+  OIDC_DISCOVERY_FAILED = 'OIDC_DISCOVERY_FAILED',
+  OIDC_STATE_INVALID = 'OIDC_STATE_INVALID',
+  OIDC_DENIED = 'OIDC_DENIED',
+  OIDC_EXCHANGE_FAILED = 'OIDC_EXCHANGE_FAILED',
+  OIDC_CLAIMS_INVALID = 'OIDC_CLAIMS_INVALID',
+  OIDC_USERNAME_CONFLICT = 'OIDC_USERNAME_CONFLICT',
+  OIDC_NO_PERMISSIONS = 'OIDC_NO_PERMISSIONS',
 }
 
 interface ErrorDetails {
@@ -113,6 +124,42 @@ export const ErrorMap: Record<ErrorCode, ErrorDetails> = {
   [ErrorCode.FORBIDDEN]: {
     statusCode: 403,
     message: 'Forbidden',
+  },
+  [ErrorCode.OIDC_DISABLED]: {
+    statusCode: 404,
+    message: 'SSO login is not enabled on this instance',
+  },
+  [ErrorCode.OIDC_NOT_CONFIGURED]: {
+    statusCode: 503,
+    message: 'SSO login is enabled but not fully configured',
+  },
+  [ErrorCode.OIDC_DISCOVERY_FAILED]: {
+    statusCode: 502,
+    message: 'Could not reach the SSO provider',
+  },
+  [ErrorCode.OIDC_STATE_INVALID]: {
+    statusCode: 400,
+    message: 'The login attempt expired or could not be verified',
+  },
+  [ErrorCode.OIDC_DENIED]: {
+    statusCode: 403,
+    message: 'The SSO provider denied the login request',
+  },
+  [ErrorCode.OIDC_EXCHANGE_FAILED]: {
+    statusCode: 502,
+    message: 'The SSO provider rejected the login',
+  },
+  [ErrorCode.OIDC_CLAIMS_INVALID]: {
+    statusCode: 502,
+    message: 'The SSO provider did not return the expected user details',
+  },
+  [ErrorCode.OIDC_USERNAME_CONFLICT]: {
+    statusCode: 409,
+    message: 'This SSO username collides with a local user',
+  },
+  [ErrorCode.OIDC_NO_PERMISSIONS]: {
+    statusCode: 403,
+    message: 'Your account is not mapped to any AIOStreams permissions',
   },
 };
 

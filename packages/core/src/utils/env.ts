@@ -14,6 +14,7 @@ import {
 } from 'envalid';
 import { randomBytes } from 'crypto';
 import fs from 'fs';
+import { PERMISSION_NAMES } from './permissions.js';
 
 /**
  * Bootstrap environment validation.
@@ -111,9 +112,6 @@ const proxyAuth = makeValidator((x) => {
   return userMap;
 });
 
-/** Permission names accepted in AIOSTREAMS_AUTH_PERMISSIONS. */
-const PERMISSION_NAMES = ['admin', 'proxy', 'service', 'sabnzbd'] as const;
-
 const permissionsMap = makeExactValidator<Map<string, Set<string>>>((x) => {
   const map = new Map<string, Set<string>>();
   if (x === '') {
@@ -137,7 +135,8 @@ const permissionsMap = makeExactValidator<Map<string, Set<string>>>((x) => {
     }
     const perms = new Set<string>();
     // `none` (or an empty value) grants no permissions: the user can still log
-    // in to a protected config page but cannot use any permission-gated feature.
+    // in to a protected config page and edit an existing configuration, but
+    // cannot create one or use any permission-gated feature.
     if (permsRaw === '' || permsRaw === 'none') {
       map.set(username, perms);
       continue;

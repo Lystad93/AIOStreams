@@ -1,0 +1,469 @@
+---
+title: SSO / OIDC Login
+description: Sign in to the dashboard with an existing identity provider instead of AIOSTREAMS_AUTH.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+AIOStreams can delegate operator login to any OpenID Connect provider — Authelia, Authentik, Keycloak, Entra ID, Google, and so on.
+Instead of maintaining a second set of credentials in `AIOSTREAMS_AUTH`, operators sign in with the identity they already have, and what they are allowed to do is decided by a claim you map, usually group membership.
+
+## What SSO covers
+
+SSO replaces the **operator login** only. That is the identity behind:
+
+- the **dashboard** at `/dashboard`
+- the **configuration page** when `AIOSTREAMS_AUTH_REQUIRED` is on
+
+<Callout type="info">
+  **No accounts are created.** Unlike most applications with SSO, AIOStreams
+  does not provision a user on first sign-in. A successful login issues a
+  session cookie and nothing else: no user record, no profile, nothing stored
+  against your identity. There is nothing to deprovision, and no "registration"
+  to disable.
+
+Access is decided entirely by the group mapping below, and it **denies by
+default** — an identity matching no group is refused. So the restrictive state
+is the one you start in; you open it up per group, rather than closing it down
+after the fact.
+
+</Callout>
+
+<Callout type="warn">
+  **SSO does not affect Stremio addon URLs.** Stremio fetches
+  `/stremio/<uuid>/<password>/manifest.json` as a headless HTTP client — there is
+  no browser, no cookie jar, and no way to follow a login redirect. That URL
+  remains a bearer credential regardless of how you sign in to the dashboard.
+  Stremio users, their passwords and their encrypted configs are a completely
+  separate identity system and are untouched by SSO.
+</Callout>
+
+<Callout type="warn">
+  **SSO is not a lock on your instance.** Whether strangers can create
+  configurations is governed by `AIOSTREAMS_AUTH_REQUIRED`, and by nothing else.
+  With that off, anyone who can reach `/stremio/configure` can create one,
+  signed in or not, exactly as they could before you enabled SSO. Enabling SSO
+  does not change it.
+
+If you want the configuration page private, turn `AIOSTREAMS_AUTH_REQUIRED` on
+as well. SSO then decides who may pass that gate; on its own it only decides who
+may reach the dashboard.
+
+</Callout>
+
+There is one more limit worth planning around. Several features authenticate with HTTP Basic credentials, which an SSO identity does not have:
+
+| Feature                                                | Works with SSO                       |
+| ------------------------------------------------------ | ------------------------------------ |
+| Dashboard                                              | Yes                                  |
+| Configuration page (`AIOSTREAMS_AUTH_REQUIRED`)        | Yes                                  |
+| Built-in proxy                                         | No, needs an `AIOSTREAMS_AUTH` entry |
+| Built-in usenet engine (streaming and its SABnzbd API) | No, needs an `AIOSTREAMS_AUTH` entry |
+
+Most operators keep one `AIOSTREAMS_AUTH` user for those, which conveniently doubles as the recovery account if SSO ever breaks.
+
+## Setup
+
+Every setting lives under **Dashboard → Settings → SSO / OIDC** and applies without a restart, so the dashboard is the easier place to get this working. Each one also has an environment variable if you prefer to declare your instance in a compose file.
+
+<Steps>
+<Step>
+
+**Register AIOStreams with your provider.** The redirect URI is your base URL plus the callback path:
+
+```
+<BASE_URL>/api/v1/auth/oidc/callback
+```
+
+For example, `https://aiostreams.example.com/api/v1/auth/oidc/callback`. It must match exactly, including the scheme.
+
+Registering produces the **client ID** and **client secret** you will need in the next step.
+Some may let you choose a client ID, while others generate one for you.
+Whatever your provider ends up showing is the value AIOStreams needs.
+
+</Step>
+<Step>
+
+**Point AIOStreams at the provider.** Only four settings are required. The issuer is the provider's root URL; `/.well-known/openid-configuration` is discovered automatically.
+
+<Tabs items={['Dashboard', 'Environment']}>
+<Tab value="Dashboard">
+
+| Setting          | Value                                                     |
+| ---------------- | --------------------------------------------------------- |
+| Enable SSO login | on                                                        |
+| Issuer URL       | your provider's root URL, e.g. `https://auth.example.com` |
+| Client ID        | the client ID from step 1                                 |
+| Client secret    | the client secret from step 1                             |
+
+</Tab>
+<Tab value="Environment">
+
+```bash
+AIOSTREAMS_OIDC_ENABLED=true
+AIOSTREAMS_OIDC_ISSUER=https://auth.example.com
+AIOSTREAMS_OIDC_CLIENT_ID=<client-id>
+AIOSTREAMS_OIDC_CLIENT_SECRET=<client-secret>
+```
+
+</Tab>
+</Tabs>
+
+</Step>
+<Step>
+
+**Request the group claim.** Most providers only include group membership when you ask for it, so add `groups` to **Scopes**:
+
+<Tabs items={['Dashboard', 'Environment']}>
+<Tab value="Dashboard">
+
+Set **Scopes** to `openid`, `profile`, `email`, `groups`.
+
+</Tab>
+<Tab value="Environment">
+
+```bash
+AIOSTREAMS_OIDC_SCOPES='openid profile email groups'
+```
+
+</Tab>
+</Tabs>
+
+The default omits `groups` because Google and Entra ID reject it as an unknown scope. If your provider exposes groups under a different claim, change **Groups claim**. If it has no groups at all, skip ahead to [Providers that have no groups](#providers-that-have-no-groups).
+
+</Step>
+<Step>
+
+**Map groups to permissions.** Nothing is granted until you do:
+
+<Tabs items={['Dashboard', 'Environment']}>
+<Tab value="Dashboard">
+
+Under **Group permissions**, add one row per group:
+
+| Group               | Permissions      |
+| ------------------- | ---------------- |
+| `aiostreams-admins` | `admin`          |
+| `media-team`        | `proxy\|sabnzbd` |
+
+</Tab>
+<Tab value="Environment">
+
+```bash
+AIOSTREAMS_OIDC_GROUP_PERMISSIONS='aiostreams-admins=admin,media-team=proxy|sabnzbd'
+```
+
+Group names containing `,` or `=`, such as LDAP distinguished names, need the JSON form instead:
+
+```bash
+AIOSTREAMS_OIDC_GROUP_PERMISSIONS='{"cn=admins,ou=groups,dc=example,dc=com":"admin"}'
+```
+
+</Tab>
+</Tabs>
+
+</Step>
+</Steps>
+
+A "Sign in with SSO" button then appears on the login page.
+
+## Providers that have no groups
+
+Some providers send no group claim at all. Google is the common one: a consumer Google account has only `sub`, `email`, `email_verified`, `name` and `picture`. There is no `groups`, and there is no scope you can add to get one.
+
+Follow the steps above with such a provider and **nobody can sign in, including you**. Nothing matches, so everything is refused. That is the safe failure, but it is a dead end.
+
+<Callout type="error">
+  **Do not fix this with Default permissions.** Setting it to `admin` is the
+  obvious-looking escape and it is the one genuinely dangerous configuration in
+  this guide: it admits every identity the provider will authenticate. With
+  Google, that is every Google account in existence, as an administrator of your
+  instance.
+</Callout>
+
+The fix is to map a claim that identifies the person instead. **Groups claim** simply names which claim carries the values you map — nothing requires it to be group membership. Point it at `email` and the mapping becomes an allowlist:
+
+<Tabs items={['Dashboard', 'Environment']}>
+<Tab value="Dashboard">
+
+| Setting             | Value                     |
+| ------------------- | ------------------------- |
+| Username claim      | `email`                   |
+| Groups claim        | `email`                   |
+| Group permissions   | `you@gmail.com` → `admin` |
+| Default permissions | leave empty               |
+
+</Tab>
+<Tab value="Environment">
+
+```bash
+AIOSTREAMS_OIDC_USERNAME_CLAIM=email
+AIOSTREAMS_OIDC_GROUPS_CLAIM=email
+AIOSTREAMS_OIDC_GROUP_PERMISSIONS='you@gmail.com=admin'
+# Default permissions stays empty
+```
+
+</Tab>
+</Tabs>
+
+Listed addresses are admitted; every other account is refused exactly as before. Deny-by-default is preserved, and you have not had to widen anything.
+
+For Google Workspace, map the `hd` (hosted domain) claim instead to admit your whole organisation and nobody else:
+
+```bash
+AIOSTREAMS_OIDC_GROUPS_CLAIM=hd
+AIOSTREAMS_OIDC_GROUP_PERMISSIONS='mycompany.com=admin'
+```
+
+Note that with these providers you must also change **Username claim**, since there is no `preferred_username` to fall back on. Leaving it at the default gives every login `oidc_claims_invalid`.
+
+## Permissions
+
+Permissions are resolved from the group claim at login and stored in the session. Valid values are `admin`, `createConfig`, `proxy`, `service` and `sabnzbd`, combined with `|`, or `none` for a login with no permissions. `admin` implies all of them.
+
+| Permission                    | Grants                                                               |
+| ----------------------------- | -------------------------------------------------------------------- |
+| `admin`                       | Everything, including the dashboard                                  |
+| `createConfig`                | Creating new configurations                                          |
+| `proxy`, `service`, `sabnzbd` | The matching Basic-auth features, which an SSO identity cannot reach |
+
+Editing an existing configuration needs no permission — it is already gated by knowing the configuration's own password.
+
+<Callout type="warn">
+  **An identity that matches no group is refused.** This is deliberate. Without
+  a mapping there is nothing to fall back on except the behaviour that grants
+  every unlisted user full admin, which would hand instance administration to
+  everyone in your directory the moment you enable SSO.
+</Callout>
+
+**Default permissions** (`AIOSTREAMS_OIDC_DEFAULT_PERMISSIONS`) is the fallback for an identity that matched nothing, and it applies **only** in that case. It is empty by default, which is what makes an unmatched identity refused rather than admitted.
+
+Setting it to `admin` inverts the model: every identity your provider will authenticate becomes an instance admin. That is only safe when the provider itself decides who may reach AIOStreams — true of a private Authelia or Keycloak, and emphatically not true of Google or any other provider the public can sign up to.
+
+### Login-only access
+
+`none` is a permission spec in its own right, and it is how you express "may sign in and use what they already have, may not administer anything". Such a session reaches the configuration page and can edit an existing configuration, but cannot create a new one and is refused everywhere `admin` is required, including the whole dashboard.
+
+Grant `createConfig` instead if they should also be able to make new configurations.
+
+| Setting                    | Result for an unmatched identity |
+| -------------------------- | -------------------------------- |
+| Default permissions empty  | Refused, no session              |
+| Default permissions `none` | Admitted, no permissions         |
+| A group mapped to `none`   | Admitted, no permissions         |
+
+This matches what `none` already does in `AIOSTREAMS_AUTH_PERMISSIONS`, so a login-only user behaves the same whether they arrive by password or SSO.
+
+<Callout type="info">
+  Today `admin` and `createConfig` are the permissions that change what a
+  signed-in session can do, because they are what the dashboard and
+  configuration creation check. Mapping a group to `proxy`, `service` or
+  `sabnzbd` is recorded on the session but has no effect, since those
+  features authenticate with Basic credentials rather than a session.
+</Callout>
+
+Because permissions are resolved at login, a group change in your provider takes effect on the user's next sign-in, not immediately. Sessions last as long as **Session lifetime** (`SESSION_TTL_SECONDS`), 24 hours by default.
+
+## Provider setup
+
+<Tabs items={['Authelia', 'Authentik', 'Keycloak', 'Google']}>
+<Tab value="Authelia">
+
+Add a client under `identity_providers.oidc.clients`:
+
+```yaml
+identity_providers:
+  oidc:
+    clients:
+      - client_id: aiostreams
+        client_name: AIOStreams
+        client_secret: '$pbkdf2-sha512$310000$...'  # hashed, see below
+        public: false
+        authorization_policy: two_factor
+        require_pkce: true
+        pkce_challenge_method: S256
+        redirect_uris:
+          - 'https://aiostreams.example.com/api/v1/auth/oidc/callback'
+        scopes: [openid, profile, email, groups]
+        userinfo_signed_response_alg: none
+```
+
+Authelia stores client secrets hashed. Generate the digest with:
+
+```bash
+docker run --rm authelia/authelia:latest \
+  authelia crypto hash generate pbkdf2 --variant sha512 --password '<secret>'
+```
+
+Give AIOStreams the **plaintext** secret and Authelia the digest. The issuer is your Authelia root URL, and groups come from the user's `groups` list in the file or LDAP backend.
+
+</Tab>
+<Tab value="Authentik">
+
+Create an **OAuth2/OpenID Provider**:
+
+- Authorization flow: `default-provider-authorization-explicit-consent` (or implicit)
+- Client type: **Confidential**
+- Redirect URI: `https://aiostreams.example.com/api/v1/auth/oidc/callback`
+- Scopes: the `openid`, `profile` and `email` mappings, plus a mapping that emits `groups`
+
+Then create an Application bound to it. The issuer is shown on the provider page and looks like:
+
+```
+https://authentik.example.com/application/o/<application-slug>/
+```
+
+Authentik often exposes `groups` only from the userinfo endpoint rather than in the ID token. AIOStreams handles that automatically — if the configured username or groups claim is missing from the ID token, it fetches userinfo and merges the result.
+
+</Tab>
+<Tab value="Keycloak">
+
+Under **Clients → Create client**:
+
+- Client authentication: **On**
+- Authentication flow: **Standard flow**
+- Valid redirect URIs: `https://aiostreams.example.com/api/v1/auth/oidc/callback`
+
+Take the secret from the **Credentials** tab. Keycloak does not emit groups by default — add a mapper under **Client scopes → \<client\>-dedicated → Add mapper → Group Membership**:
+
+- Token Claim Name: `groups`
+- **Full group path: Off** — otherwise groups arrive as `/admins` rather than `admins` and your mapping will not match
+- Add to ID token and userinfo: On
+
+The issuer is:
+
+```
+https://keycloak.example.com/realms/<realm>
+```
+
+</Tab>
+<Tab value="Google">
+
+In the [Google Cloud Console](https://console.cloud.google.com), create a project, then:
+
+- **OAuth consent screen** — user type **External** (or **Internal** if you have Workspace, which restricts sign-in to your organisation)
+- **Credentials → Create credentials → OAuth client ID → Web application**
+- Authorized redirect URI: `https://aiostreams.example.com/api/v1/auth/oidc/callback`
+
+The issuer is `https://accounts.google.com`. Google supports PKCE and discovery, so nothing else needs configuring on their side.
+
+Google sends no groups, so configure AIOStreams as an email allowlist rather than a group mapping — see [Providers that have no groups](#providers-that-have-no-groups) above. In short:
+
+```bash
+AIOSTREAMS_OIDC_ISSUER=https://accounts.google.com
+AIOSTREAMS_OIDC_SCOPES='openid email profile'
+AIOSTREAMS_OIDC_USERNAME_CLAIM=email
+AIOSTREAMS_OIDC_GROUPS_CLAIM=email
+AIOSTREAMS_OIDC_GROUP_PERMISSIONS='you@gmail.com=admin'
+```
+
+<Callout type="info">
+  Leaving the consent screen in **Testing** adds a second layer: only accounts
+  listed as test users can complete the flow, up to 100 of them. Testing mode
+  expires refresh tokens after seven days, which does not affect AIOStreams
+  since it never uses one.
+
+Do not rely on that alone. Google prompts you to publish the app, and publishing
+removes the test-user list without touching anything else. The email mapping is
+the layer that does not quietly disappear.
+
+</Callout>
+
+</Tab>
+</Tabs>
+
+## Usernames
+
+The username comes from **Username claim** (`AIOSTREAMS_OIDC_USERNAME_CLAIM`), `preferred_username` by default.
+
+It is not displayed as your identity anywhere in the UI, so it mostly matters after the fact. It identifies you in the server log, which means it is visible on the dashboard **Logs** page against entries like `settings updated`, `user deleted` and `all cache cleared`, and it is recorded as **Added by** on NZBs you add from the usenet dashboard.
+
+<Callout type="info">
+  Library entries that arrive through the SABnzbd API instead show the
+  `AIOSTREAMS_AUTH` user that Sonarr or Radarr authenticated with. That path
+  uses Basic credentials and has no session, so it can never show an SSO name.
+</Callout>
+
+<Callout type="info">
+  Keycloak and Authentik let users change their own `preferred_username`. If
+  yours does, set the claim to `sub` instead: it is immutable and always
+  present. Otherwise a rename splits a user's audit history and frees the old
+  name for someone else to take.
+</Callout>
+
+If an SSO username collides with an `AIOSTREAMS_AUTH` user, **the login is refused** rather than silently merged. The two identities would otherwise be indistinguishable in exactly the places above, so anyone who can set a `preferred_username` in your directory could have their actions logged as one of your local operators.
+
+### Using one identity for both
+
+You will usually want an `AIOSTREAMS_AUTH` entry anyway, for the proxy and the usenet engine. Turning on **Link to local users by username** (`AIOSTREAMS_OIDC_LINK_BY_USERNAME`) makes a matching SSO identity _be_ that user rather than colliding with it, so `alice` is one person with two ways to sign in.
+
+A linked session takes its permissions from `AIOSTREAMS_AUTH_PERMISSIONS`, and the group mapping is **not** consulted for it. That is the point: the person is configured once rather than once per login method.
+
+<Callout type="warn">
+  This is off by default because it turns a username into proof of identity. Only
+  enable it if you control who can authenticate at your provider *and* who can
+  change their own username there — a self-service `preferred_username` at
+  Keycloak or Authentik is not proof of anything. Google's `email` is, since
+  Google verifies it.
+
+Because permissions are linked too, an impersonator would inherit the local
+user's full set, not just group-derived ones.
+
+</Callout>
+
+If you cannot make that assumption, set **Username prefix** (`AIOSTREAMS_OIDC_USERNAME_PREFIX`) to something like `sso:` instead, which makes collisions structurally impossible.
+
+| Setting                         | Behaviour on a username collision                           |
+| ------------------------------- | ----------------------------------------------------------- |
+| Default                         | Refused                                                     |
+| Link to local users by username | Same person, permissions from `AIOSTREAMS_AUTH_PERMISSIONS` |
+| Username prefix set             | Cannot occur                                                |
+
+## Locking it down
+
+Once SSO works you can retire password login and send users straight to the provider:
+
+| Setting                                 | Environment variable                      | Effect                           |
+| --------------------------------------- | ----------------------------------------- | -------------------------------- |
+| Allow local login → off                 | `AIOSTREAMS_OIDC_ALLOW_LOCAL_LOGIN=false` | Hides the username/password form |
+| Redirect to provider automatically → on | `AIOSTREAMS_OIDC_AUTO_REDIRECT=true`      | Skips the login page entirely    |
+
+<Callout type="error">
+  **Recovery.** Setting both means a provider outage or a bad group mapping
+  locks everyone out. Three ways back in, in increasing order of force:
+
+1. `/login?local=1` suppresses the automatic redirect, so you can reach the
+   login page at all. The password form still only appears if local login is
+   enabled.
+2. Set `AIOSTREAMS_OIDC_ALLOW_LOCAL_LOGIN=true` in the environment and restart.
+3. Set `AIOSTREAMS_OIDC_ENABLED=false` in the environment and restart.
+
+Steps 2 and 3 are environment variables rather than dashboard settings on
+purpose: the environment always wins, so nothing stored in the database can
+override them, and neither can a dashboard you are locked out of. Keep at least
+one `AIOSTREAMS_AUTH` user for the same reason. You will need one for the proxy
+and the usenet engine anyway.
+
+</Callout>
+
+## Troubleshooting
+
+Failures return you to the login page with an `?error=` code and a toast. The precise cause is always in the server log.
+
+| Code                     | Meaning                                       | Usual fix                                                                                                                                          |
+| ------------------------ | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `oidc_disabled`          | SSO is off                                    | Turn on **Enable SSO login**                                                                                                                       |
+| `oidc_not_configured`    | Enabled without an issuer or client ID        | Set both                                                                                                                                           |
+| `oidc_discovery_failed`  | Provider unreachable                          | Check the issuer URL and that AIOStreams can resolve it                                                                                            |
+| `oidc_state_invalid`     | Login expired or the state cookie was missing | Retry; if it always happens, check that the browser is not blocking cookies                                                                        |
+| `oidc_denied`            | Provider refused the request                  | Usually the user cancelled consent, or the client is not authorised for them                                                                       |
+| `oidc_exchange_failed`   | Provider rejected the code                    | Check the client secret and that the redirect URI matches exactly                                                                                  |
+| `oidc_claims_invalid`    | No usable username claim                      | Check **Username claim** against what your provider emits. Google and other providers with no `preferred_username` need it set to `email` or `sub` |
+| `oidc_username_conflict` | Collides with a local user                    | Turn on **Link to local users by username** if they are the same person, otherwise set a **Username prefix**                                       |
+| `oidc_no_permissions`    | Nothing matched                               | Check **Group permissions**, and that the claim you are mapping is actually arriving                                                               |
+
+For `oidc_no_permissions`, the log line records the username **and the values the provider actually sent** for the claim you are mapping. The two usual causes are an empty list because the `groups` scope was not requested, and a provider that sends no groups at all — see [Providers that have no groups](#providers-that-have-no-groups).
+
+One more note:
+
+- **HTTP issuers are refused.** If your provider is on plain HTTP inside a trusted network, turn on **Allow insecure (http) issuer** (`AIOSTREAMS_OIDC_ALLOW_INSECURE_REQUESTS`). The client secret and tokens then travel in the clear.

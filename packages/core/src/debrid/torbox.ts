@@ -27,7 +27,8 @@ import {
   DebridFailureCache,
   convertStatusCodeToError,
 } from './base.js';
-import { ParsedResult, parseTorrentTitle } from '@viren070/parse-torrent-title';
+import { ParsedResult } from '@viren070/parse-torrent-title';
+import { parseTorrentTitleCached } from '../parser/title.js';
 
 const logger = createLogger('debrid:torbox');
 
@@ -917,7 +918,7 @@ export class TorboxDebridService
       allStrings.push(...usenetDownload.files.map((file) => file.name ?? ''));
 
       const parseResults: ParsedResult[] = allStrings.map((string) =>
-        parseTorrentTitle(string)
+        parseTorrentTitleCached(string)
       );
       const parsedFiles = new Map<string, ParsedResult>();
       for (const [index, result] of parseResults.entries()) {

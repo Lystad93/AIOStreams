@@ -3,11 +3,13 @@ import { getDb } from '../db.js';
 import { sql } from '../sql.js';
 import { config as appConfig } from '../../config/index.js';
 import {
+  Cache,
   decryptString,
   deriveKey,
   encryptString,
   generateUUID,
   getTextHash,
+  getSimpleTextHash,
   createLogger,
   constants,
   Env,
@@ -17,6 +19,7 @@ import {
   mergeConfigs,
   assertConfigAccessKey,
 } from '../../utils/index.js';
+import { ConfigProfileRepository } from './config-profiles.js';
 
 const APIError = constants.APIError;
 const logger = createLogger('users');
@@ -40,6 +43,37 @@ function dbError(err: unknown, fallback = constants.ErrorCode.DATABASE_ERROR) {
 function toDateString(v: unknown): string {
   if (v instanceof Date) return v.toISOString();
   return String(v);
+}
+
+interface ConfigKeyEntry {
+  /** Row values the entry was derived from; a change to either invalidates it. */
+  passwordHash: string;
+  configSalt: string;
+  /** Hex, so the cache's structured clone keeps it a plain value. */
+  key: string;
+}
+
+const CONFIG_KEY_CACHE_TTL = 300;
+
+const configKeyCache = Cache.getInstance<string, ConfigKeyEntry>(
+  'config-key',
+  5000,
+  'memory'
+);
+
+let trustedUuidsSource: string | null | undefined;
+let trustedUuidPatterns: RegExp[] = [];
+
+/** Recompiles only when the configured list changes, not per request. */
+function isTrustedUuid(uuid: string): boolean {
+  const source = appConfig.userLimits.trusted.uuids;
+  if (source !== trustedUuidsSource) {
+    trustedUuidsSource = source;
+    trustedUuidPatterns = source
+      ? source.split(',').map((pattern) => new RegExp(pattern))
+      : [];
+  }
+  return trustedUuidPatterns.some((pattern) => pattern.test(uuid));
 }
 
 export class UserRepository {
@@ -199,28 +233,60 @@ export class UserRepository {
       throw new APIError(constants.ErrorCode.USER_INVALID_DETAILS);
     }
 
+    const key = await this.resolveConfigKey(uuid, password, row);
+
     await db.exec(
       sql`UPDATE users SET accessed_at = CURRENT_TIMESTAMP WHERE uuid = ${uuid}`
     );
 
-    const isValid = await verifyHash(password, row.password_hash);
-    if (!isValid) {
-      throw new APIError(constants.ErrorCode.USER_INVALID_DETAILS);
-    }
+    const decryptedConfig = this.decryptConfigWithKey(row.config, key);
 
-    const decryptedConfig = await this.decryptConfig(
-      row.config,
-      password,
-      row.config_salt
-    );
-
-    decryptedConfig.trusted =
-      appConfig.userLimits.trusted.uuids
-        ?.split(',')
-        .some((u) => new RegExp(u).test(uuid)) ?? false;
+    decryptedConfig.trusted = isTrustedUuid(uuid);
     decryptedConfig.uuid = uuid;
     decryptedConfig.ip = undefined;
     return applyMigrations(decryptedConfig);
+  }
+
+  /**
+   * Verifies the password and returns the key its config is encrypted with.
+   */
+  private static async resolveConfigKey(
+    uuid: string,
+    password: string,
+    row: UserRow
+  ): Promise<Buffer> {
+    const cacheKey = `${uuid}:${getSimpleTextHash(password)}`;
+    const cached = await configKeyCache.get(cacheKey);
+    if (
+      cached &&
+      cached.passwordHash === row.password_hash &&
+      cached.configSalt === row.config_salt
+    ) {
+      return Buffer.from(cached.key, 'hex');
+    }
+
+    const isValid = await verifyHash(password, row.password_hash);
+    if (!isValid) {
+      await configKeyCache.delete(cacheKey);
+      throw new APIError(constants.ErrorCode.USER_INVALID_DETAILS);
+    }
+
+    const { key } = await deriveKey(
+      `${password}:${appConfig.bootstrap.secretKey}`,
+      row.config_salt
+    );
+
+    await configKeyCache.set(
+      cacheKey,
+      {
+        passwordHash: row.password_hash,
+        configSalt: row.config_salt,
+        key: key.toString('hex'),
+      },
+      CONFIG_KEY_CACHE_TTL
+    );
+
+    return key;
   }
 
   static async verifyUser(
@@ -262,10 +328,7 @@ export class UserRepository {
       throw new APIError(constants.ErrorCode.PARENT_CONFIG_SELF_REFERENCE);
     }
     assertConfigAccessKey(config);
-    config.trusted =
-      appConfig.userLimits.trusted.uuids
-        ?.split(',')
-        .some((u) => new RegExp(u).test(uuid)) ?? false;
+    config.trusted = isTrustedUuid(uuid);
     config.ip = undefined;
 
     const db = getDb();
@@ -439,6 +502,13 @@ export class UserRepository {
                   updated_at = CURRENT_TIMESTAMP
               WHERE uuid = ${uuid}`
         );
+        // Saved configurations hold the same blob as the install URL, so they
+        // break on the next password change unless rotated with it.
+        await ConfigProfileRepository.reencryptForUuid(
+          tx,
+          uuid,
+          newEncryptedPasswordToken
+        );
       });
       logger.info(`Changed password for user ${uuid}`);
       return { encryptedPassword: newEncryptedPasswordToken };
@@ -477,6 +547,13 @@ export class UserRepository {
       `${password}:${appConfig.bootstrap.secretKey}`,
       salt
     );
+    return this.decryptConfigWithKey(encryptedConfig, key);
+  }
+
+  private static decryptConfigWithKey(
+    encryptedConfig: string,
+    key: Buffer
+  ): UserData {
     const { success, data: decryptedString } = decryptString(
       encryptedConfig,
       key

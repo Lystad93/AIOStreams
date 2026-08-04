@@ -45,6 +45,7 @@ const TAB_MANIFEST: Record<
   { label: string; group: string; order: number }
 > = {
   api: { label: 'General', group: 'Core', order: 1 },
+  oidc: { label: 'SSO / OIDC', group: 'Core', order: 2 },
   branding: { label: 'Branding', group: 'Core', order: 2 },
   templates: { label: 'Templates', group: 'Core', order: 3 },
   metadata: { label: 'Metadata', group: 'Core', order: 4 },
@@ -78,6 +79,8 @@ const ACRONYMS: Record<string, string> = {
   tvdb: 'TVDB',
   rpdb: 'RPDB',
   oauth: 'OAuth',
+  oidc: 'OIDC',
+  sso: 'SSO',
   gdrive: 'GDrive',
   ttl: 'TTL',
   nab: 'NAB',

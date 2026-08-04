@@ -14,7 +14,7 @@ import {
   isUsenetDebridService,
 } from '../../debrid/index.js';
 import { titleMatch, cleanTitle, preprocessTitle } from '../../parser/utils.js';
-import { parseTorrentTitle } from '@viren070/parse-torrent-title';
+import { parseTorrentTitleCached } from '../../parser/title.js';
 import { SearchMetadata } from '../base/debrid.js';
 
 const logger = createLogger('library');
@@ -29,7 +29,7 @@ export function isItemMatch(
   metadata: SearchMetadata,
   parsedId: ParsedId
 ): boolean {
-  const parsed = parseTorrentTitle(itemName);
+  const parsed = parseTorrentTitleCached(itemName);
   const preprocessedTitle = preprocessTitle(
     parsed.title ?? '',
     itemName,

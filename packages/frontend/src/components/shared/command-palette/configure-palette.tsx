@@ -98,32 +98,34 @@ function humanize(value: string): string {
 
 /** The FIELD_META index never changes, so normalise it once at module load
  *  rather than on every keystroke. */
-const FIELD_ITEMS = Object.entries(FIELD_META).map(([key, meta]) => {
-  const trail =
-    meta.subTab !== undefined
-      ? `${humanize(meta.menu)} → ${humanize(meta.subTab)}`
-      : (MENU_LABELS[meta.menu] ?? humanize(meta.menu));
-  const fallbackSectionIds =
-    meta.menu === 'filters' && meta.subTab
-      ? [`filter-tab-${meta.subTab}`]
-      : undefined;
-  return {
-    key,
-    label: meta.label,
-    trail,
-    sectionId: meta.sectionId ?? key,
-    menu: meta.menu,
-    subTab: meta.subTab,
-    fallbackSectionIds,
-    haystack: buildHaystack([
-      meta.label,
+const FIELD_ITEMS = Object.entries(FIELD_META)
+  .filter(([, meta]) => !meta.ignoreForCommandPalette)
+  .map(([key, meta]) => {
+    const trail =
+      meta.subTab !== undefined
+        ? `${humanize(meta.menu)} → ${humanize(meta.subTab)}`
+        : (MENU_LABELS[meta.menu] ?? humanize(meta.menu));
+    const fallbackSectionIds =
+      meta.menu === 'filters' && meta.subTab
+        ? [`filter-tab-${meta.subTab}`]
+        : undefined;
+    return {
       key,
-      meta.menu,
-      meta.subTab,
-      ...(meta.keywords ?? []),
-    ]),
-  };
-});
+      label: meta.label,
+      trail,
+      sectionId: meta.sectionId ?? key,
+      menu: meta.menu,
+      subTab: meta.subTab,
+      fallbackSectionIds,
+      haystack: buildHaystack([
+        meta.label,
+        key,
+        meta.menu,
+        meta.subTab,
+        ...(meta.keywords ?? []),
+      ]),
+    };
+  });
 
 const FILTER_TAB_ITEMS = FILTER_TABS.map((tab) => ({
   ...tab,

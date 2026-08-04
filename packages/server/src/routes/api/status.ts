@@ -9,7 +9,7 @@ import {
 } from '@aiostreams/core';
 import { StatusResponse } from '@aiostreams/core';
 import { encryptString } from '@aiostreams/core';
-import { RegexAccess, FeatureControl } from '@aiostreams/core';
+import { RegexAccess, FeatureControl, isOidcAvailable } from '@aiostreams/core';
 import { createResponse } from '../../utils/responses.js';
 import { getSeanimeExtensionVersion } from '../../utils/seanime.js';
 
@@ -43,6 +43,14 @@ const statusInfo = async (): Promise<StatusResponse> => {
           : undefined,
       alternateDesign: appConfig.branding.alternateDesign,
       protected: appConfig.api.authRequired,
+      // Public endpoint: the button renders pre-auth, so nothing identifying
+      // the provider goes here.
+      oidc: {
+        enabled: isOidcAvailable(),
+        buttonLabel: appConfig.oidc.buttonLabel,
+        autoRedirect: appConfig.oidc.autoRedirect,
+        localLoginEnabled: appConfig.oidc.allowLocalLogin,
+      },
       tmdbApiAvailable: !!appConfig.metadata.tmdb.accessToken,
       regexAccess: {
         level: appConfig.userLimits.regex.access,

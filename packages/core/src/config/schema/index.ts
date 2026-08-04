@@ -18,4 +18,5 @@ export { analyticsSchema } from './analytics.js';
 export { usenetSchema } from './usenet.js';
 export { streamsSchema } from './streams.js';
 export { releaseBlocklistSchema } from './release-blocklist.js';
+export { oidcSchema } from './oidc.js';
 export { subtitlesSchema } from './subtitles.js';

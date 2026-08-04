@@ -26,7 +26,8 @@ import {
   UsenetDebridService,
   DebridFailureCache,
 } from './base.js';
-import { parseTorrentTitle, ParsedResult } from '@viren070/parse-torrent-title';
+import { ParsedResult } from '@viren070/parse-torrent-title';
+import { parseTorrentTitleCached } from '../parser/title.js';
 import assert from 'assert';
 
 const logger = createLogger('debrid:stremthru');
@@ -1091,7 +1092,7 @@ export class StremThruService
       allStrings.push(magnetDownload.name ?? '');
       allStrings.push(...magnetDownload.files.map((file) => file.name ?? ''));
       const parseResults: ParsedResult[] = allStrings.map((string) =>
-        parseTorrentTitle(string)
+        parseTorrentTitleCached(string)
       );
       const parsedFiles = new Map<string, ParsedResult>();
       for (const [index, result] of parseResults.entries()) {
@@ -1366,7 +1367,7 @@ export class StremThruService
       allStrings.push(...usenetDownload.files.map((f) => f.name ?? ''));
 
       const parseResults: ParsedResult[] = allStrings.map((string) =>
-        parseTorrentTitle(string)
+        parseTorrentTitleCached(string)
       );
       const parsedFiles = new Map<string, ParsedResult>();
       for (const [index, result] of parseResults.entries()) {

@@ -4,7 +4,8 @@ import {
   ServiceId,
   createLogger,
 } from '../utils/index.js';
-import { checkAuthToken, parseCredential, Permission } from '../utils/auth.js';
+import { checkAuthToken, parseCredential } from '../utils/auth.js';
+import { Permission } from '../utils/permissions.js';
 import {
   DebridServiceConfig,
   DebridDownload,

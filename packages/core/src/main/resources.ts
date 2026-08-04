@@ -803,10 +803,11 @@ export async function getStreams(
   const usePipelineCache = !preCaching && pipelineTtl > 0;
   // Hash the full userData: it captures everything the pipeline output depends
   // on
-  const pipelineCacheKey = `${getSimpleTextHash(
-    JSON.stringify(ctx.userData)
-  )}:${type}:${id}`;
+  let pipelineCacheKey = '';
   if (usePipelineCache) {
+    pipelineCacheKey = `${getSimpleTextHash(
+      JSON.stringify(ctx.userData)
+    )}:${type}:${id}`;
     const cached = await pipelineResultCache.get(pipelineCacheKey);
     if (cached !== undefined) {
       // The fetch pipeline that normally populates the context's backing fields

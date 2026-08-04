@@ -80,6 +80,13 @@ const streamsCache = Cache.getInstance<string, ParsedStream[]>(
   'streams',
   () => appConfig.resources.cache.stream.maxSize
 );
+// Remembers manifests that failed, so a dead addon is not re-fetched on every request.
+const manifestFailureCache = Cache.getInstance<string, string>(
+  'manifest_failure',
+  () => appConfig.resources.cache.manifest.maxSize
+);
+
+let backgroundInFlight = 0;
 
 /**
  * Resolves TTL value from a cacheTtls map based on priority:
@@ -189,7 +196,7 @@ export class Wrapper {
         options: this.addon.preset.options,
       }) || this.manifestUrl;
 
-    const requestFn = async (): Promise<Manifest> => {
+    const requestFn = async (signal: AbortSignal): Promise<Manifest> => {
       logger.debug(
         { addon: this.addon.name, url: makeUrlLogSafe(this.manifestUrl) },
         'fetching manifest'
@@ -200,6 +207,10 @@ export class Wrapper {
           appConfig.userLimits.timeouts.maxTimeout;
         const res = await makeRequest(this.manifestUrl, {
           timeout: backgroundTimeout,
+          signal: AbortSignal.any([
+            signal,
+            AbortSignal.timeout(backgroundTimeout),
+          ]),
           headers: this.addon.headers,
           forwardIp: this.addon.ip,
         });
@@ -220,6 +231,8 @@ export class Wrapper {
             `Manifest response could not be parsed: ${formatZodError(manifest.error)}`
           );
         }
+
+        manifestFailureCache.delete(cacheKey).catch(() => undefined);
         return manifest.data;
       } catch (error: any) {
         if (!(error instanceof PossibleRecursiveRequestError)) {
@@ -237,19 +250,36 @@ export class Wrapper {
       }
     };
 
-    return this._request({
-      requestFn,
-      timeout: options?.timeout ?? appConfig.resources.timeouts.manifest,
-      resourceName: 'manifest',
-      cacher: manifestCache,
-      cacheKey,
-      cacheTtl: resolveTtl(
-        appConfig.resources.cache.manifest.ttl,
-        this.addon.preset.type,
-        this.manifestUrl
-      ),
-      bypassCache: options?.bypassCache,
-    });
+    const failureTtl = appConfig.resources.cache.manifest.failureTtl;
+    if (failureTtl > 0 && !options?.bypassCache) {
+      const failure = await manifestFailureCache.get(cacheKey);
+      if (failure) {
+        throw new Error(failure);
+      }
+    }
+
+    try {
+      return await this._request({
+        requestFn,
+        timeout: options?.timeout ?? appConfig.resources.timeouts.manifest,
+        resourceName: 'manifest',
+        cacher: manifestCache,
+        cacheKey,
+        cacheTtl: resolveTtl(
+          appConfig.resources.cache.manifest.ttl,
+          this.addon.preset.type,
+          this.manifestUrl
+        ),
+        bypassCache: options?.bypassCache,
+      });
+    } catch (error: any) {
+      if (failureTtl > 0 && !(error instanceof PossibleRecursiveRequestError)) {
+        await manifestFailureCache
+          .set(cacheKey, error.message, failureTtl)
+          .catch(() => undefined);
+      }
+      throw error;
+    }
   }
 
   async getStreams(type: string, id: string): Promise<ParsedStream[]> {
@@ -480,8 +510,57 @@ export class Wrapper {
     });
   }
 
+  /**
+   * Keeps an abandoned request running so its result still populates the cache,
+   * unless too many are already in flight, in which case it is cancelled. Also
+   * owns the promise's rejection, which nothing else is waiting on any more.
+   */
+  private trackBackgroundRequest(
+    requestPromise: Promise<unknown>,
+    controller: AbortController,
+    resourceName: string
+  ): void {
+    const overBudget =
+      backgroundInFlight >= appConfig.resources.background.maxConcurrent;
+
+    if (overBudget) {
+      controller.abort();
+      logger.warn(
+        {
+          addon: this.getAddonName(this.addon),
+          resource: resourceName,
+          inFlight: backgroundInFlight,
+        },
+        'request timed out and the background budget is exhausted, cancelling'
+      );
+    } else {
+      backgroundInFlight++;
+      logger.warn(
+        { addon: this.getAddonName(this.addon), resource: resourceName },
+        'request timed out, continuing in background'
+      );
+    }
+
+    requestPromise
+      .catch((bgError) => {
+        logger.warn(
+          {
+            addon: this.getAddonName(this.addon),
+            resource: resourceName,
+            err: bgError?.message,
+          },
+          'background request failed'
+        );
+      })
+      .finally(() => {
+        if (!overBudget) {
+          backgroundInFlight--;
+        }
+      });
+  }
+
   private async _request<T>(options: {
-    requestFn: () => Promise<T>;
+    requestFn: (signal: AbortSignal) => Promise<T>;
     timeout: number;
     resourceName: string;
     cacher?: Cache<string, T>;
@@ -516,8 +595,9 @@ export class Wrapper {
       }
     }
 
+    const controller = new AbortController();
     const processRequest = async () => {
-      const result = await requestFn();
+      const result = await requestFn(controller.signal);
       const doCache = shouldCache ? shouldCache(result) : true;
       // bypass cache only skips retrieving from cache, it still caches the result
       if (cacher && doCache) {
@@ -532,8 +612,9 @@ export class Wrapper {
       return await requestPromise;
     }
 
-    const timeoutPromise: Promise<T> = new Promise<T>((_, reject) =>
-      setTimeout(
+    let timeoutHandle: NodeJS.Timeout | undefined;
+    const timeoutPromise: Promise<T> = new Promise<T>((_, reject) => {
+      timeoutHandle = setTimeout(
         () =>
           reject(
             new Error(
@@ -541,12 +622,17 @@ export class Wrapper {
             )
           ),
         timeout
-      )
-    );
+      );
+    });
 
     try {
       return await Promise.race([requestPromise, timeoutPromise]);
     } catch (error: any) {
+      // Registered before the stale-cache return so a timed-out request is
+      // still accounted for (and its rejection owned) on that path too.
+      if (error.message.includes('timed out')) {
+        this.trackBackgroundRequest(requestPromise, controller, resourceName);
+      }
       if (cached) {
         logger.warn(
           {
@@ -558,23 +644,9 @@ export class Wrapper {
         );
         return cached;
       }
-      if (error.message.includes('timed out')) {
-        logger.warn(
-          { addon: this.getAddonName(this.addon), resource: resourceName },
-          'request timed out, continuing in background'
-        );
-        requestPromise.catch((bgError) => {
-          logger.warn(
-            {
-              addon: this.getAddonName(this.addon),
-              resource: resourceName,
-              err: bgError.message,
-            },
-            'background request failed'
-          );
-        });
-      }
       throw error;
+    } finally {
+      clearTimeout(timeoutHandle);
     }
   }
 
@@ -603,13 +675,14 @@ export class Wrapper {
       'fetching resource'
     );
 
-    const requestFn = async (): Promise<T> => {
+    const requestFn = async (signal: AbortSignal): Promise<T> => {
       const timeout = doBackground
         ? (appConfig.resources.background.timeout ??
           appConfig.userLimits.timeouts.maxTimeout)
         : this.addon.timeout;
       const res = await makeRequest(url, {
         timeout,
+        signal: AbortSignal.any([signal, AbortSignal.timeout(timeout)]),
         headers: this.addon.headers,
         forwardIp: this.addon.ip,
       });

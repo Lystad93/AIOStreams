@@ -66,6 +66,8 @@ export interface FieldMeta {
   keywords?: string[];
   /** Exclude from the parent config field-overrides UI. Field appears in the command palette but cannot be individually overridden in the parent config modal. */
   ignoreForParentConfig?: boolean;
+  /** Exclude from the command palette. For fields with no always-rendered card, e.g. options only settable by importing a JSON config. */
+  ignoreForCommandPalette?: boolean;
 }
 
 type IgnoredKeys =
@@ -163,7 +165,7 @@ export const FIELD_META: Omit<Record<keyof UserData, FieldMeta>, IgnoredKeys> = 
   syncedRankedStreamExpressionUrls: { label: 'Synced Ranked Expression URLs', group: 'filters', type: 'list', menu: 'filters', subTab: 'stream-expression' },
 
   enableSeadex: { label: 'SeaDex', group: 'filters', type: 'scalar', menu: 'filters', subTab: 'miscellaneous', keywords: ['anime', 'releases.moe'] },
-  excludeSeasonPacks: { label: 'Exclude Season Packs', group: 'filters', type: 'scalar', menu: 'filters', subTab: 'miscellaneous' },
+  excludeSeasonPacks: { label: 'Exclude Season Packs', group: 'filters', type: 'scalar', menu: 'filters', subTab: 'miscellaneous', ignoreForCommandPalette: true },
 
   excludeCached: { label: 'Exclude Cached Streams', group: 'filters', type: 'scalar', menu: 'filters', subTab: 'cache' },
   excludeCachedFromAddons: { label: 'Exclude Cached — From Addons', group: 'filters', type: 'list', menu: 'filters', subTab: 'cache', sectionId: 'excludeCached' },

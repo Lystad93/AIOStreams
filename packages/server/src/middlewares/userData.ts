@@ -1,6 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import {
-  config as appConfig,
   createLogger,
   APIError,
   constants,
@@ -10,6 +9,8 @@ import {
   StremioTransformer,
   UserRepository,
   Env,
+  isConfigUuid,
+  resolveConfigAlias,
 } from '@aiostreams/core';
 import { syncUserDataUrls } from '../utils/syncUserData.js';
 
@@ -23,6 +24,8 @@ const VALID_RESOURCES = [
   'manifest',
   'streams',
 ];
+
+const RESOURCE_REGEX = new RegExp(`/(${VALID_RESOURCES.join('|')})`);
 
 interface UserDataParams {
   uuid?: string;
@@ -44,9 +47,7 @@ export const userDataMiddleware = async (
     return;
   }
   // First check - validate path has two components followed by valid resource
-  const resourceRegex = new RegExp(`/(${VALID_RESOURCES.join('|')})`);
-
-  const resourceMatch = req.path.match(resourceRegex);
+  const resourceMatch = req.path.match(RESOURCE_REGEX);
   if (!resourceMatch) {
     next();
     return;
@@ -54,10 +55,8 @@ export const userDataMiddleware = async (
 
   // Second check - validate UUID format (simpler regex that just checks UUID format)
   let uuid: string | undefined;
-  const uuidRegex =
-    /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
-  if (!uuidRegex.test(uuidOrAlias)) {
-    const alias = appConfig.api.aliasedConfigurations[uuidOrAlias];
+  if (!isConfigUuid(uuidOrAlias)) {
+    const alias = await resolveConfigAlias(uuidOrAlias);
     if (alias) {
       uuid = alias.uuid;
     } else {

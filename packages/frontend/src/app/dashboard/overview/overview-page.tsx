@@ -10,12 +10,11 @@ import { useQuery } from '@tanstack/react-query';
 import {
   BiBarChartAlt2,
   BiChip,
+  BiCloudDownload,
   BiCog,
   BiData,
-  BiGroup,
   BiHistory,
-  BiLineChart,
-  BiServer,
+  BiPlayCircle,
   BiTask,
   BiTerminal,
 } from 'react-icons/bi';
@@ -63,10 +62,16 @@ const LINKS: Array<{
     icon: BiBarChartAlt2,
   },
   {
-    to: '/dashboard/users',
-    label: 'Users',
-    desc: 'Browse user configs',
-    icon: BiGroup,
+    to: '/dashboard/streams',
+    label: 'Streams',
+    desc: 'Active, history & bandwidth',
+    icon: BiPlayCircle,
+  },
+  {
+    to: '/dashboard/usenet',
+    label: 'Usenet',
+    desc: 'Library, providers & stats',
+    icon: BiCloudDownload,
   },
   {
     to: '/dashboard/tasks',
@@ -91,12 +96,6 @@ const LINKS: Array<{
     label: 'Cache',
     desc: 'Cache stats & flush',
     icon: BiData,
-  },
-  {
-    to: '/dashboard/proxy',
-    label: 'Proxy',
-    desc: 'Built-in proxy',
-    icon: BiLineChart,
   },
   {
     to: '/dashboard/settings',

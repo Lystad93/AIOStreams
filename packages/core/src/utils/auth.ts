@@ -3,21 +3,34 @@ import { createLogger } from '../logging/logger.js';
 import { APIError, ErrorCode } from './constants.js';
 import { toUrlSafeBase64, fromUrlSafeBase64 } from './general.js';
 import { config as appConfig, settingsStore } from '../config/index.js';
+import { Permission, ALL_PERMISSIONS, isPermission } from './permissions.js';
 
 const logger = createLogger('auth');
 
 const CONFIG_ACCESS_KEY_SETTING = 'api.configAccessKey';
 const AUTH_REQUIRED_SETTING = 'api.authRequired';
 
+/**
+ * Where a session's permissions come from: `password` re-resolves them from the
+ * environment on every request, `oidc` carries the set resolved at login.
+ */
+export type SessionSource = 'password' | 'oidc';
+
 export interface SessionUser {
   username: string;
   isAdmin: boolean;
+  permissions: Permission[];
+  source: SessionSource;
 }
 
 interface SessionPayload {
   u: string;
   a: boolean;
   exp: number;
+  /** Resolved permissions. Written for OIDC sessions only. */
+  p?: Permission[];
+  /** Absent means a password session. */
+  s?: 'oidc';
 }
 
 function constantTimeEquals(a: string, b: string): boolean {
@@ -26,21 +39,6 @@ function constantTimeEquals(a: string, b: string): boolean {
   if (ab.length !== bb.length) return false;
   return timingSafeEqual(ab, bb);
 }
-
-/**
- * Permissions an AIOSTREAMS_AUTH user may hold. `admin` is a superset that
- * implies every other permission.
- */
-export const Permission = {
-  Admin: 'admin',
-  Proxy: 'proxy',
-  Service: 'service',
-  Sabnzbd: 'sabnzbd',
-} as const;
-
-export type Permission = (typeof Permission)[keyof typeof Permission];
-
-const ALL_PERMISSIONS: Permission[] = Object.values(Permission);
 
 /**
  * Parse a credential string into its username/password parts. Accepts both
@@ -131,6 +129,9 @@ export function checkAuthToken(
  *   AIOSTREAMS_AUTH_PROXY behaviour: admin if the admin list is empty or
  *   includes them; proxy if the proxy list is empty or includes them; service
  *   and sabnzbd are always granted. With no legacy vars set this means every user is an admin.
+ *
+ * Password identities only: an OIDC subject has no AIOSTREAMS_AUTH entry, so it
+ * would take that fallback and receive every permission.
  */
 export function getEffectivePermissions(username: string): Set<Permission> {
   const configured = appConfig.bootstrap.authPermissions?.get(username);
@@ -151,7 +152,13 @@ export function getEffectivePermissions(username: string): Set<Permission> {
   const canProxy =
     !proxyAllow || proxyAllow.length === 0 || proxyAllow.includes(username);
 
-  const perms = new Set<Permission>([Permission.Service, Permission.Sabnzbd]);
+  // createConfig is included here because the legacy vars only ever excluded a
+  // user from *admin*, never from managing configurations.
+  const perms = new Set<Permission>([
+    Permission.Service,
+    Permission.Sabnzbd,
+    Permission.CreateConfig,
+  ]);
   if (canProxy) perms.add(Permission.Proxy);
   return perms;
 }
@@ -208,31 +215,47 @@ export function warnLegacyAuthVarsIfNeeded(): void {
   }
 }
 
+/**
+ * Warn about explicit permission lists that predate a permission they now need.
+ * Written before `createConfig` existed, such a list silently loses it. Call
+ * once at startup; reuse for any permission added later.
+ */
+export function warnMissingConfigPermission(): void {
+  if (!appConfig.api.authRequired) return;
+  const configured = appConfig.bootstrap.authPermissions;
+  if (!configured || configured.size === 0) return;
+
+  const affected = [...configured]
+    .filter(
+      ([, perms]) =>
+        !perms.has(Permission.Admin) && !perms.has(Permission.CreateConfig)
+    )
+    .map(([username]) => username);
+
+  if (affected.length === 0) return;
+  logger.warn(
+    { users: affected },
+    `these users have an explicit AIOSTREAMS_AUTH_PERMISSIONS entry without "${Permission.CreateConfig}" and can no longer create configurations. Add it to their entry if that is not intended.`
+  );
+}
+
 function sign(data: string): string {
   return createHmac('sha256', appConfig.bootstrap.secretKey)
     .update(data)
     .digest('base64url');
 }
 
-/**
- * Issue a stateless, HMAC-signed session token (JWT-like) for a username.
- */
-export function issueSession(username: string): string {
-  const ttl = appConfig.api.sessionTtlSeconds;
-  const payload: SessionPayload = {
-    u: username,
-    a: isAdminUser(username),
-    exp: Math.floor(Date.now() / 1000) + ttl,
-  };
+/** Encode a payload as `base64url(json).hmac`. */
+export function encodeSignedPayload(payload: object): string {
   const body = toUrlSafeBase64(JSON.stringify(payload));
   return `${body}.${sign(body)}`;
 }
 
 /**
- * Verify a session token. Returns the session user on success, null on any
- * failure (bad signature, malformed, expired).
+ * Inverse of {@link encodeSignedPayload}. Returns null on a bad signature or
+ * malformed body; the caller validates the payload's own fields.
  */
-export function verifySession(token: string | undefined): SessionUser | null {
+export function decodeSignedPayload<T>(token: string | undefined): T | null {
   if (!token) return null;
   const dot = token.lastIndexOf('.');
   if (dot <= 0) return null;
@@ -240,18 +263,90 @@ export function verifySession(token: string | undefined): SessionUser | null {
   const sig = token.slice(dot + 1);
   if (!constantTimeEquals(sig, sign(body))) return null;
   try {
-    const payload = JSON.parse(fromUrlSafeBase64(body)) as SessionPayload;
-    if (
-      typeof payload.u !== 'string' ||
-      typeof payload.exp !== 'number' ||
-      payload.exp < Math.floor(Date.now() / 1000)
-    ) {
-      return null;
-    }
-    return { username: payload.u, isAdmin: !!payload.a };
+    return JSON.parse(fromUrlSafeBase64(body)) as T;
   } catch {
     return null;
   }
+}
+
+/**
+ * Issue a stateless, HMAC-signed session token (JWT-like) for a username.
+ */
+export function issueSession(
+  username: string,
+  options?: { permissions?: Permission[]; source?: SessionSource }
+): string {
+  const ttl = appConfig.api.sessionTtlSeconds;
+  const isOidc = options?.source === 'oidc';
+  const permissions = options?.permissions ?? [];
+  const payload: SessionPayload = {
+    u: username,
+    a: isOidc ? permissions.includes(Permission.Admin) : isAdminUser(username),
+    exp: Math.floor(Date.now() / 1000) + ttl,
+    ...(isOidc ? { p: permissions, s: 'oidc' as const } : {}),
+  };
+  return encodeSignedPayload(payload);
+}
+
+/**
+ * Verify a session token. Returns the session user on success, null on any
+ * failure (bad signature, malformed, expired).
+ *
+ * Tokens without `s` take the password path, which keeps already-issued
+ * cookies valid.
+ */
+export function verifySession(token: string | undefined): SessionUser | null {
+  const payload = decodeSignedPayload<SessionPayload>(token);
+  if (!payload) return null;
+  if (
+    typeof payload.u !== 'string' ||
+    typeof payload.exp !== 'number' ||
+    payload.exp < Math.floor(Date.now() / 1000)
+  ) {
+    return null;
+  }
+
+  if (payload.s === 'oidc') {
+    // Must not fall through to the password path below, whose fallback grants
+    // every permission to a username it does not know. An empty array is
+    // deliberate (login-only) and stays valid; a missing one is not.
+    if (!Array.isArray(payload.p)) return null;
+    const granted = payload.p.filter(isPermission);
+    // Everything filtered out means this replica predates every name in the
+    // token, so re-authenticate rather than silently downgrading to none.
+    if (payload.p.length > 0 && granted.length === 0) return null;
+    const permissions = granted.includes(Permission.Admin)
+      ? [...ALL_PERMISSIONS]
+      : granted;
+    return {
+      username: payload.u,
+      isAdmin: permissions.includes(Permission.Admin),
+      permissions,
+      source: 'oidc',
+    };
+  }
+
+  const permissions = [...getEffectivePermissions(payload.u)];
+  return {
+    username: payload.u,
+    isAdmin: permissions.includes(Permission.Admin),
+    permissions,
+    source: 'password',
+  };
+}
+
+/**
+ * Whether a session holds a permission. `admin` implies all. Use this rather
+ * than {@link hasPermission} for anything driven by a session cookie.
+ */
+export function sessionHasPermission(
+  user: SessionUser,
+  permission: Permission
+): boolean {
+  return (
+    user.permissions.includes(Permission.Admin) ||
+    user.permissions.includes(permission)
+  );
 }
 
 /**

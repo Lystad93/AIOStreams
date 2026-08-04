@@ -13,7 +13,7 @@ import {
 } from '../../debrid/index.js';
 import { Meta } from '../../db/schemas.js';
 import { formatSmartBytes } from '../../formatters/utils.js';
-import { parseTorrentTitle } from '@viren070/parse-torrent-title';
+import { parseTorrentTitleCached } from '../../parser/title.js';
 import { LIBRARY_ID_PREFIX } from './catalog.js';
 
 const logger = createLogger('library:meta');
@@ -96,7 +96,7 @@ export function buildMeta(
 ): Meta {
   logger.debug({ item, id }, 'Building library meta for item');
   const videos = buildVideos(item, id);
-  const parsed = parseTorrentTitle(item.name ?? '');
+  const parsed = parseTorrentTitleCached(item.name ?? '');
   const descriptionParts: string[] = [];
 
   const padNumber = (num: number) => num.toString().padStart(2, '0');
@@ -164,7 +164,7 @@ function buildVideos(
   }
 
   return videoFiles.map((file) => {
-    const parsed = parseTorrentTitle(file.name ?? '');
+    const parsed = parseTorrentTitleCached(file.name ?? '');
 
     const isSpecial =
       /NCED|NCOP/i.test(file.name ?? '') ||

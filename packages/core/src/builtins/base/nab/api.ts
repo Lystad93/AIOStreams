@@ -82,6 +82,27 @@ const AttributeSchema = z
   .object({ $: z.object({ name: z.string(), value: convertString }) })
   .transform((attr) => ({ [attr.$.name]: attr.$.value }));
 
+type NabAttributes = Record<string, string | number | boolean | undefined>;
+
+/**
+ * Collapse `<ns:attr>` elements into a single object.
+ */
+const collapseAttributes = (
+  attrs: NabAttributes[] | undefined
+): NabAttributes =>
+  attrs?.reduce<NabAttributes>((acc, attr) => {
+    for (const key in attr) {
+      const value = attr[key];
+      if (value === '') continue;
+      const previous = acc[key];
+      acc[key] =
+        typeof previous === 'string' && previous && typeof value === 'string'
+          ? `${previous},${value}`
+          : value;
+    }
+    return acc;
+  }, {}) ?? {};
+
 const GuidSchema = z
   .array(z.union([z.string(), z.object({ _: z.string().optional() })]))
   .optional()
@@ -134,20 +155,7 @@ const createTorznabItemSchema = () =>
       'torznab:attr': z
         .array(AttributeSchema)
         .optional()
-        .transform(
-          (arr) =>
-            arr?.reduce((acc, attr) => {
-              for (const key in attr) {
-                acc[key] =
-                  acc[key] &&
-                  typeof acc[key] === 'string' &&
-                  typeof attr[key] === 'string'
-                    ? acc[key] + ',' + attr[key]
-                    : attr[key];
-              }
-              return acc;
-            }, {}) ?? {}
-        ),
+        .transform(collapseAttributes),
     })
     .transform((item) => ({
       title: item.title,
@@ -200,9 +208,7 @@ const createNewznabItemSchema = () =>
       'newznab:attr': z
         .array(AttributeSchema)
         .optional()
-        .transform(
-          (arr) => arr?.reduce((acc, attr) => ({ ...acc, ...attr }), {}) ?? {}
-        ),
+        .transform(collapseAttributes),
     })
     .transform((item) => ({
       title: item.title,

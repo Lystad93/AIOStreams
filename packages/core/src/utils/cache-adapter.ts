@@ -12,6 +12,21 @@ const logger = createLogger('cache');
 
 const REDIS_TIMEOUT = appConfig.bootstrap.redisTimeout;
 
+/**
+ * True when a serialised value is too large to be worth storing.
+ */
+function isOversized(serialised: string, prefix: string, key: string): boolean {
+  const max = appConfig.resources.cache.maxValueBytes;
+  if (!max) return false;
+  const bytes = Buffer.byteLength(serialised, 'utf8');
+  if (bytes <= max) return false;
+  logger.warn(
+    { cache: prefix, key, bytes, max },
+    'value exceeds the cache size limit, not caching it'
+  );
+  return true;
+}
+
 // Interface that both memory and Redis cache will implement
 export interface CacheBackend<K, V> {
   get(key: K, updateTTL?: boolean): Promise<V | undefined>;
@@ -219,8 +234,10 @@ export class RedisCacheBackend<K, V> implements CacheBackend<K, V> {
   ): Promise<void> {
     if (ttl === 0) return;
     const redisKey = this.getKey(key);
+    const serialised = JSON.stringify(value);
+    if (isOversized(serialised, this.prefix, String(key))) return;
     RedisCacheBackend.writeBuffer.set(redisKey, {
-      value: JSON.stringify(value),
+      value: serialised,
       ttl,
     });
 
@@ -283,6 +300,8 @@ export class RedisCacheBackend<K, V> implements CacheBackend<K, V> {
 
   async update(key: K, value: V): Promise<void> {
     const redisKey = this.getKey(key);
+    const serialised = JSON.stringify(value);
+    if (isOversized(serialised, this.prefix, String(key))) return;
 
     await withTimeout(
       async () => {
@@ -291,7 +310,7 @@ export class RedisCacheBackend<K, V> implements CacheBackend<K, V> {
         if (ttl <= 0) return false; // Key doesn't exist or has no TTL
 
         // Update value but keep the same TTL
-        await this.client.set(redisKey, JSON.stringify(value), {
+        await this.client.set(redisKey, serialised, {
           EX: ttl,
         });
         return true;
@@ -473,9 +492,12 @@ export class SQLCacheBackend<K, V> implements CacheBackend<K, V> {
       const placeholders: string[] = [];
       const now = Date.now();
       for (const [key, item] of bufferToFlush.entries()) {
+        const serialised = JSON.stringify(item.value);
+        if (isOversized(serialised, 'sql', key)) continue;
         placeholders.push('(?, ?, ?)');
-        values.push(key, JSON.stringify(item.value), now + item.ttl * 1000);
+        values.push(key, serialised, now + item.ttl * 1000);
       }
+      if (placeholders.length === 0) return;
       const valuesClause = placeholders.join(', ');
 
       await db.exec(

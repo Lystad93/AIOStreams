@@ -25,7 +25,8 @@ import {
   TitleMetadata,
   hashNzbUrl,
 } from '../../debrid/index.js';
-import { parseTorrentTitle, ParsedResult } from '@viren070/parse-torrent-title';
+import { ParsedResult } from '@viren070/parse-torrent-title';
+import { parseTorrentTitleCached } from '../../parser/title.js';
 import {
   preprocessTitle,
   normaliseTitle,
@@ -84,7 +85,7 @@ export async function processTorrents(
   for (const t of torrents) {
     const key = t.title ?? '';
     if (!sharedParsedTitlesMap.has(key)) {
-      sharedParsedTitlesMap.set(key, parseTorrentTitle(key));
+      sharedParsedTitlesMap.set(key, parseTorrentTitleCached(key));
     }
   }
 
@@ -246,7 +247,7 @@ async function processTorrentsForDebridService(
     for (const torrent of torrents) {
       const key = torrent.title ?? '';
       if (!parsedTitlesMap.has(key)) {
-        parsedTitlesMap.set(key, parseTorrentTitle(key));
+        parsedTitlesMap.set(key, parseTorrentTitleCached(key));
       }
     }
   }
@@ -340,7 +341,7 @@ async function processTorrentsForDebridService(
 
   // Parse all file strings in one call
   const allParsedFiles: ParsedResult[] = allFileStrings.map((string) =>
-    parseTorrentTitle(string)
+    parseTorrentTitleCached(string)
   );
   const parsedFiles = new Map<string, ParsedResult>();
   for (const [index, result] of allParsedFiles.entries()) {
@@ -432,7 +433,7 @@ export async function processTorrentsForP2P(
   // Parse only torrent titles and perform validation checks
   const torrentTitles = torrents.map((torrent) => torrent.title ?? '');
   const parsedTitles: ParsedResult[] = torrentTitles.map((title) =>
-    parseTorrentTitle(title)
+    parseTorrentTitleCached(title)
   );
   const parsedTitlesMap = new Map<string, ParsedResult>();
   for (const [index, result] of parsedTitles.entries()) {
@@ -469,7 +470,7 @@ export async function processTorrentsForP2P(
   }
 
   const allParsedFiles: ParsedResult[] = allFileStrings.map((string) =>
-    parseTorrentTitle(string)
+    parseTorrentTitleCached(string)
   );
   const parsedFiles = new Map<string, ParsedResult>();
   for (const [index, result] of allParsedFiles.entries()) {
@@ -531,7 +532,7 @@ export async function processNZBs(
   for (const n of nzbs) {
     const key = n.title ?? '';
     if (!sharedParsedNzbTitlesMap.has(key)) {
-      sharedParsedNzbTitlesMap.set(key, parseTorrentTitle(key));
+      sharedParsedNzbTitlesMap.set(key, parseTorrentTitleCached(key));
     }
   }
 
@@ -638,7 +639,7 @@ async function processNZBsForDebridService(
     for (const nzb of nzbs) {
       const key = nzb.title ?? '';
       if (!parsedTitlesMap.has(key)) {
-        parsedTitlesMap.set(key, parseTorrentTitle(key));
+        parsedTitlesMap.set(key, parseTorrentTitleCached(key));
       }
     }
   }
@@ -721,7 +722,7 @@ async function processNZBsForDebridService(
   }
 
   const allParsedFiles: ParsedResult[] = allFileStrings.map((string) =>
-    parseTorrentTitle(string)
+    parseTorrentTitleCached(string)
   );
   const parsedFiles = new Map<string, ParsedResult>();
   for (const [index, result] of allParsedFiles.entries()) {
