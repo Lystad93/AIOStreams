@@ -5,7 +5,7 @@ description: Sign in to the dashboard with an existing identity provider instead
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
-AIOStreams can delegate operator login to any OpenID Connect provider — Authelia, Authentik, Keycloak, Entra ID, Google, and so on.
+AIOStreams can delegate operator login to any OpenID Connect provider — Pocket ID, Authelia, Authentik, Keycloak, Entra ID, Google, and so on.
 Instead of maintaining a second set of credentials in `AIOSTREAMS_AUTH`, operators sign in with the identity they already have, and what they are allowed to do is decided by a claim you map, usually group membership.
 
 ## What SSO covers
@@ -84,7 +84,11 @@ Whatever your provider ends up showing is the value AIOStreams needs.
 </Step>
 <Step>
 
-**Point AIOStreams at the provider.** Only four settings are required. The issuer is the provider's root URL; `/.well-known/openid-configuration` is discovered automatically.
+**Point AIOStreams at the provider.** Only four settings are required. The issuer is usually the provider's root URL; `/.well-known/openid-configuration` is discovered automatically.
+
+<Callout type="warn">
+Copy the issuer exactly as your provider states it, **including any trailing slash**.
+</Callout>
 
 <Tabs items={['Dashboard', 'Environment']}>
 <Tab value="Dashboard">
@@ -266,7 +270,30 @@ Because permissions are resolved at login, a group change in your provider takes
 
 ## Provider setup
 
-<Tabs items={['Authelia', 'Authentik', 'Keycloak', 'Google']}>
+<Tabs items={['Pocket ID', 'Authelia', 'Authentik', 'Keycloak', 'Google']}>
+<Tab value="Pocket ID">
+
+Under **Settings → OIDC Clients → Add OIDC Client**:
+
+- Callback URLs: `https://aiostreams.example.com/api/v1/auth/oidc/callback`
+- Public Client: off, so a client secret is issued
+
+The client ID and secret are shown once the client is saved. The issuer is your Pocket ID URL, exactly as its `APP_URL` is set:
+
+```
+https://id.example.com
+```
+
+Pocket ID supports the `groups` scope and emits both `preferred_username` and `groups`, so no claim settings need changing.
+
+<Callout type="warn">
+  A new client admits nobody until you say otherwise. In Pocket ID's words, "no
+  user groups and therefore no users are allowed to access the client". Either
+  press **Unrestrict** to allow every user, or list the groups you mapped under
+  **Allowed User Groups**. Until you do, sign-in comes back as `oidc_denied`.
+</Callout>
+
+</Tab>
 <Tab value="Authelia">
 
 Add a client under `identity_providers.oidc.clients`:
@@ -282,6 +309,8 @@ identity_providers:
         authorization_policy: two_factor
         require_pkce: true
         pkce_challenge_method: S256
+        consent_mode: pre-configured
+        pre_configured_consent_duration: 1 month
         redirect_uris:
           - 'https://aiostreams.example.com/api/v1/auth/oidc/callback'
         scopes: [openid, profile, email, groups]
@@ -297,12 +326,18 @@ docker run --rm authelia/authelia:latest \
 
 Give AIOStreams the **plaintext** secret and Authelia the digest. The issuer is your Authelia root URL, and groups come from the user's `groups` list in the file or LDAP backend.
 
+`consent_mode` decides how often the permissions screen appears. There are 3 modes:
+
+- `explicit` asks every time, which is the default. This means signing out of AIOStreams and back in shows it again each time.
+- `pre-configured` asks once and remembers the answer for `pre_configured_consent_duration`, as long as the user ticks the remember option on that first screen.
+- `implicit` never asks at all.
+
 </Tab>
 <Tab value="Authentik">
 
 Create an **OAuth2/OpenID Provider**:
 
-- Authorization flow: `default-provider-authorization-explicit-consent` (or implicit)
+- Authorization flow: `default-provider-authorization-implicit-consent`, or `default-provider-authorization-explicit-consent` for a permissions screen
 - Client type: **Confidential**
 - Redirect URI: `https://aiostreams.example.com/api/v1/auth/oidc/callback`
 - Scopes: the `openid`, `profile` and `email` mappings, plus a mapping that emits `groups`
@@ -450,17 +485,17 @@ and the usenet engine anyway.
 
 Failures return you to the login page with an `?error=` code and a toast. The precise cause is always in the server log.
 
-| Code                     | Meaning                                       | Usual fix                                                                                                                                          |
-| ------------------------ | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `oidc_disabled`          | SSO is off                                    | Turn on **Enable SSO login**                                                                                                                       |
-| `oidc_not_configured`    | Enabled without an issuer or client ID        | Set both                                                                                                                                           |
-| `oidc_discovery_failed`  | Provider unreachable                          | Check the issuer URL and that AIOStreams can resolve it                                                                                            |
-| `oidc_state_invalid`     | Login expired or the state cookie was missing | Retry; if it always happens, check that the browser is not blocking cookies                                                                        |
-| `oidc_denied`            | Provider refused the request                  | Usually the user cancelled consent, or the client is not authorised for them                                                                       |
-| `oidc_exchange_failed`   | Provider rejected the code                    | Check the client secret and that the redirect URI matches exactly                                                                                  |
-| `oidc_claims_invalid`    | No usable username claim                      | Check **Username claim** against what your provider emits. Google and other providers with no `preferred_username` need it set to `email` or `sub` |
-| `oidc_username_conflict` | Collides with a local user                    | Turn on **Link to local users by username** if they are the same person, otherwise set a **Username prefix**                                       |
-| `oidc_no_permissions`    | Nothing matched                               | Check **Group permissions**, and that the claim you are mapping is actually arriving                                                               |
+| Code                     | Meaning                                                               | Usual fix                                                                                                                                                                       |
+| ------------------------ | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `oidc_disabled`          | SSO is off                                                            | Turn on **Enable SSO login**                                                                                                                                                    |
+| `oidc_not_configured`    | Enabled without an issuer or client ID                                | Set both                                                                                                                                                                        |
+| `oidc_discovery_failed`  | Provider unreachable, or its issuer does not match the configured one | Check the issuer URL and that AIOStreams can resolve it. If the log says the issuer does not match, copy the issuer the provider reports verbatim, including any trailing slash |
+| `oidc_state_invalid`     | Login expired or the state cookie was missing                         | Retry; if it always happens, check that the browser is not blocking cookies                                                                                                     |
+| `oidc_denied`            | Provider refused the request                                          | Usually the user cancelled consent, or the client is not authorised for them                                                                                                    |
+| `oidc_exchange_failed`   | Provider rejected the code                                            | Check the client secret and that the redirect URI matches exactly                                                                                                               |
+| `oidc_claims_invalid`    | No usable username claim                                              | Check **Username claim** against what your provider emits. Google and other providers with no `preferred_username` need it set to `email` or `sub`                              |
+| `oidc_username_conflict` | Collides with a local user                                            | Turn on **Link to local users by username** if they are the same person, otherwise set a **Username prefix**                                                                    |
+| `oidc_no_permissions`    | Nothing matched                                                       | Check **Group permissions**, and that the claim you are mapping is actually arriving                                                                                            |
 
 For `oidc_no_permissions`, the log line records the username **and the values the provider actually sent** for the claim you are mapping. The two usual causes are an empty list because the `groups` scope was not requested, and a provider that sends no groups at all — see [Providers that have no groups](#providers-that-have-no-groups).
 

@@ -4,6 +4,7 @@ import {
   ExtrasParser,
   getSimpleTextHash,
   maskSensitiveInfo,
+  userScopeKey,
 } from '../utils/index.js';
 import { Wrapper } from './wrapper.js';
 import { createPosterService } from '../poster/index.js';
@@ -413,7 +414,7 @@ export async function getMergedCatalog(
       mergeMethod: mergedCatalog.mergeMethod,
     })
   );
-  const baseCacheKey = `${id}-${ctx.userData.uuid}-${configHash}${extrasCacheKeyPart ? `-${extrasCacheKeyPart}` : ''}`;
+  const baseCacheKey = `${id}-${userScopeKey(ctx.userData)}-${configHash}${extrasCacheKeyPart ? `-${extrasCacheKeyPart}` : ''}`;
   const skipCacheKey = `${baseCacheKey}-skip=${requestedSkip}`;
 
   let skipState: MergedCatalogSkipState | undefined;
@@ -740,7 +741,7 @@ export async function getCatalog(
     };
   }
 
-  const shuffleCacheKey = `${type}-${actualCatalogId}-${parsedExtras?.toString() || ''}-${ctx.userData.uuid}`;
+  const shuffleCacheKey = `${type}-${actualCatalogId}-${parsedExtras?.toString() || ''}-${userScopeKey(ctx.userData)}`;
 
   const catalog = await applyCatalogModifications(
     ctx,

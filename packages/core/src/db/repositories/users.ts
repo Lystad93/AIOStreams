@@ -49,17 +49,13 @@ interface ConfigKeyEntry {
   /** Row values the entry was derived from; a change to either invalidates it. */
   passwordHash: string;
   configSalt: string;
-  /** Hex, so the cache's structured clone keeps it a plain value. */
+  /** Hex, so the entry survives serialisation as a plain value. */
   key: string;
 }
 
-const CONFIG_KEY_CACHE_TTL = 300;
+const CONFIG_KEY_CACHE_TTL = 30 * 60;
 
-const configKeyCache = Cache.getInstance<string, ConfigKeyEntry>(
-  'config-key',
-  5000,
-  'memory'
-);
+const configKeyCache = Cache.getInstance<string, string>('config-key', 5000);
 
 let trustedUuidsSource: string | null | undefined;
 let trustedUuidPatterns: RegExp[] = [];
@@ -87,6 +83,8 @@ export class UserRepository {
     assertConfigAccessKey(config);
     config.trusted = false;
     config.ip = undefined;
+    config.activeVariants = undefined;
+    config.variantSelectorLocation = undefined;
 
     let configToValidate: UserData = config;
     if (config.parentConfig?.uuid) {
@@ -244,6 +242,8 @@ export class UserRepository {
     decryptedConfig.trusted = isTrustedUuid(uuid);
     decryptedConfig.uuid = uuid;
     decryptedConfig.ip = undefined;
+    decryptedConfig.activeVariants = undefined;
+    decryptedConfig.variantSelectorLocation = undefined;
     return applyMigrations(decryptedConfig);
   }
 
@@ -255,14 +255,12 @@ export class UserRepository {
     password: string,
     row: UserRow
   ): Promise<Buffer> {
-    const cacheKey = `${uuid}:${getSimpleTextHash(password)}`;
-    const cached = await configKeyCache.get(cacheKey);
-    if (
-      cached &&
-      cached.passwordHash === row.password_hash &&
-      cached.configSalt === row.config_salt
-    ) {
-      return Buffer.from(cached.key, 'hex');
+    const cacheKey = `${uuid}:${getSimpleTextHash(
+      `${password}:${appConfig.bootstrap.secretKey}`
+    )}`;
+    const cached = await this.readCachedConfigKey(cacheKey, row);
+    if (cached) {
+      return cached;
     }
 
     const isValid = await verifyHash(password, row.password_hash);
@@ -276,17 +274,48 @@ export class UserRepository {
       row.config_salt
     );
 
-    await configKeyCache.set(
-      cacheKey,
-      {
-        passwordHash: row.password_hash,
-        configSalt: row.config_salt,
-        key: key.toString('hex'),
-      },
-      CONFIG_KEY_CACHE_TTL
-    );
+    const entry: ConfigKeyEntry = {
+      passwordHash: row.password_hash,
+      configSalt: row.config_salt,
+      key: key.toString('hex'),
+    };
+    const encrypted = encryptString(JSON.stringify(entry));
+    if (encrypted.success) {
+      await configKeyCache.set(cacheKey, encrypted.data, CONFIG_KEY_CACHE_TTL);
+    }
 
     return key;
+  }
+
+  /**
+   * Returns the cached key only when it still matches the stored row. Anything
+   * unreadable is dropped rather than reported.
+   */
+  private static async readCachedConfigKey(
+    cacheKey: string,
+    row: UserRow
+  ): Promise<Buffer | undefined> {
+    const cached = await configKeyCache.get(cacheKey);
+    if (!cached) return undefined;
+
+    try {
+      const { success, data } = decryptString(cached);
+      if (!success || !data) {
+        await configKeyCache.delete(cacheKey);
+        return undefined;
+      }
+      const entry = JSON.parse(data) as ConfigKeyEntry;
+      if (
+        entry.passwordHash !== row.password_hash ||
+        entry.configSalt !== row.config_salt
+      ) {
+        return undefined;
+      }
+      return Buffer.from(entry.key, 'hex');
+    } catch {
+      await configKeyCache.delete(cacheKey);
+      return undefined;
+    }
   }
 
   static async verifyUser(
@@ -330,6 +359,8 @@ export class UserRepository {
     assertConfigAccessKey(config);
     config.trusted = isTrustedUuid(uuid);
     config.ip = undefined;
+    config.activeVariants = undefined;
+    config.variantSelectorLocation = undefined;
 
     const db = getDb();
     const current = await db.maybeOne<UserRow>(

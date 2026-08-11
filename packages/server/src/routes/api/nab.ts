@@ -19,6 +19,9 @@ import {
   config as appConfig,
   constants,
   createLogger,
+  applyVariants,
+  parseVariantSelector,
+  VARIANT_QUERY_PARAM,
 } from '@aiostreams/core';
 import { corsMiddleware } from '../../middlewares/cors.js';
 import { streamApiRateLimiter } from '../../middlewares/ratelimit.js';
@@ -245,6 +248,12 @@ export function createNabRouter(namespace: NabNamespace): Router {
 
     try {
       userData.ip = req.userIp;
+      const selectedVariants = parseVariantSelector(
+        req.query[VARIANT_QUERY_PARAM]
+      );
+      if (selectedVariants.length) {
+        userData = applyVariants(userData, selectedVariants).userData;
+      }
       userData = await syncUserDataUrls(userData);
       userData = await validateConfig(userData, {
         skipErrorsFromAddonsOrProxies: true,

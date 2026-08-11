@@ -11,6 +11,11 @@ import {
   Env,
   isConfigUuid,
   resolveConfigAlias,
+  applyVariants,
+  resolveVariantSelector,
+  logVariantNotes,
+  VARIANT_QUERY_PARAM,
+  VARIANT_PATH_PARAM,
 } from '@aiostreams/core';
 import { syncUserDataUrls } from '../utils/syncUserData.js';
 
@@ -124,6 +129,45 @@ export const userDataMiddleware = async (
     userData.ip = req.userIp;
 
     if (resource !== 'configure') {
+      // Before syncUserDataUrls, since a variant may add a synced URL, and
+      // before validateConfig, which is what makes the patch safe.
+      try {
+        const { ids: selected, location } = resolveVariantSelector(
+          req.params[VARIANT_PATH_PARAM],
+          req.query[VARIANT_QUERY_PARAM]
+        );
+        if (selected.length) {
+          const result = applyVariants(userData, selected);
+          userData = result.userData;
+          userData.variantSelectorLocation = location;
+          // Per request, so it is visible whether a client carries the
+          // selector beyond the manifest.
+          logger.info(
+            { uuid, resource, variants: result.applied, location },
+            'serving request with config variants'
+          );
+          logVariantNotes(uuid, result);
+        }
+      } catch (error: any) {
+        if (constants.RESOURCES.includes(resource as Resource)) {
+          res.status(200).json(
+            StremioTransformer.createDynamicError(resource as Resource, {
+              errorDescription: error.message,
+            })
+          );
+          return;
+        }
+        logger.warn(`Invalid variant selection for ${uuid}: ${error.message}`);
+        next(
+          new APIError(
+            constants.ErrorCode.USER_INVALID_CONFIG,
+            undefined,
+            error.message
+          )
+        );
+        return;
+      }
+
       userData = await syncUserDataUrls(userData);
 
       try {

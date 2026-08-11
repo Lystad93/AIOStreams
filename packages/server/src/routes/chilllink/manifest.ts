@@ -6,6 +6,7 @@ import {
   constants,
   Env,
   UserData,
+  userScopeIdSuffix,
 } from '@aiostreams/core';
 import { Manifest } from '@aiostreams/core';
 import { createLogger } from '@aiostreams/core';
@@ -28,7 +29,7 @@ interface ChillLinkManifest {
 const manifest = async (config?: UserData): Promise<ChillLinkManifest> => {
   let addonId = appConfig.branding.addonId;
   if (config) {
-    addonId += `.${config.uuid?.substring(0, 12)}`;
+    addonId += `.${userScopeIdSuffix(config)}`;
   }
   let resources: Manifest['resources'] = [];
   if (config) {

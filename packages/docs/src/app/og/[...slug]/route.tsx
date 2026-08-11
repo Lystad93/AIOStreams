@@ -2,6 +2,7 @@ import { getPageImage, source } from '@/lib/source';
 import { notFound } from 'next/navigation';
 import { ImageResponse } from '@takumi-rs/image-response';
 import { generate as DefaultImage } from 'fumadocs-ui/og/takumi';
+import { ogBrand, ogLogo } from '@/lib/og';
 
 export const revalidate = false;
 
@@ -18,6 +19,9 @@ export async function GET(
       title={page.data.title}
       description={page.data.description}
       site="AIOStreams"
+      icon={<img src={ogLogo} width={56} height={56} alt="" />}
+      primaryColor={ogBrand.wash}
+      primaryTextColor={ogBrand.primaryText}
     />,
     {
       width: 1200,

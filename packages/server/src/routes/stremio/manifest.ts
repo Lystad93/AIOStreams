@@ -5,6 +5,7 @@ import {
   config as appConfig,
   constants,
   UserData,
+  userScopeIdSuffix,
 } from '@aiostreams/core';
 import { Manifest } from '@aiostreams/core';
 import { createLogger } from '@aiostreams/core';
@@ -18,7 +19,7 @@ export default router;
 const manifest = async (config?: UserData): Promise<Manifest> => {
   let addonId = appConfig.branding.addonId;
   if (config) {
-    addonId = addonId += `.${config.uuid?.substring(0, 12)}`;
+    addonId = addonId += `.${userScopeIdSuffix(config)}`;
   }
   let catalogs: Manifest['catalogs'] = [];
   let resources: Manifest['resources'] = [];

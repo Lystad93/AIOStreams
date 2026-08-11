@@ -71,6 +71,7 @@ import {
   constants,
   createLogger,
   Env,
+  VARIANT_PATH_ROUTE,
 } from '@aiostreams/core';
 import { StremioTransformer } from '@aiostreams/core';
 import { createResponse } from './utils/responses.js';
@@ -222,6 +223,11 @@ stremioAuthRouter.use('/subtitles', subtitle);
 stremioAuthRouter.use('/addon_catalog', addonCatalog);
 
 app.use('/stremio', stremioRouter); // For public routes
+
+app.use(
+  `/stremio/:uuid/:encryptedPassword${VARIANT_PATH_ROUTE}`,
+  stremioAuthRouter
+);
 app.use('/stremio/:uuid/:encryptedPassword', stremioAuthRouter); // For authenticated routes
 
 const chillLinkRouter = express.Router({ mergeParams: true });
@@ -232,6 +238,10 @@ chillLinkRouter.use(userDataMiddleware);
 chillLinkRouter.use('/manifest', chillLinkManifest);
 chillLinkRouter.use('/streams', chillLinkStreams);
 
+app.use(
+  `/chilllink/:uuid/:encryptedPassword${VARIANT_PATH_ROUTE}`,
+  chillLinkRouter
+);
 app.use('/chilllink/:uuid/:encryptedPassword', chillLinkRouter);
 
 const seanimeRouter = express.Router({ mergeParams: true });

@@ -7,6 +7,7 @@ import {
   ExtrasParser,
   getSimpleTextHash,
   makeUrlLogSafe,
+  userScopeKey,
 } from '../utils/index.js';
 import { config as appConfig } from '../config/index.js';
 import { getAddonName } from '../utils/general.js';
@@ -379,7 +380,7 @@ export async function processStreams(
         sameReleaseLimit: failoverOpts.sameReleaseLimit,
         duplicateStaggerMs: failoverOpts.duplicateStaggerMs,
       },
-      ctx.userData.uuid
+      userScopeKey(ctx.userData)
     ).catch((error) => {
       logger.error(
         {
@@ -414,7 +415,7 @@ export async function processStreams(
         sameReleaseLimit: failoverOpts.sameReleaseLimit,
         duplicateStaggerMs: failoverOpts.duplicateStaggerMs,
       },
-      ctx.userData.uuid
+      userScopeKey(ctx.userData)
     ).catch((error) => {
       logger.error(
         {
@@ -447,7 +448,7 @@ export async function processStreams(
           sameReleaseLimit: failoverOpts.sameReleaseLimit,
           duplicateStaggerMs: failoverOpts.duplicateStaggerMs,
         },
-        ctx.userData.uuid
+        userScopeKey(ctx.userData)
       ).catch((error) => {
         logger.error(
           {
@@ -611,7 +612,7 @@ async function precacheNextEpisode(
     'precaching streams'
   );
 
-  const cacheKey = `precache-${type}-${id}-${ctx.userData.uuid}`;
+  const cacheKey = `precache-${type}-${id}-${userScopeKey(ctx.userData)}`;
   await precacheCache.set(
     cacheKey,
     true,
@@ -933,7 +934,7 @@ export async function getStreams(
 
   if (ctx.userData.precacheNextEpisode && !preCaching) {
     let precache = false;
-    const cacheKey = `precache-${type}-${id}-${ctx.userData.uuid}`;
+    const cacheKey = `precache-${type}-${id}-${userScopeKey(ctx.userData)}`;
     const cachedNextEpisode = await precacheCache.get(cacheKey, false);
     if (cachedNextEpisode) {
       logger.debug(
@@ -960,7 +961,7 @@ export async function getStreams(
   if (ctx.userData.preloadStreams?.enabled && !preCaching) {
     let shouldPreload = true;
     if (appConfig.resources.preload.minInterval > 0) {
-      const preloadCooldownKey = `preload-${type}-${id}-${ctx.userData.uuid}`;
+      const preloadCooldownKey = `preload-${type}-${id}-${userScopeKey(ctx.userData)}`;
       const recentlyPreloaded = await precacheCache.get(
         preloadCooldownKey,
         false

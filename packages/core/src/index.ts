@@ -1,4 +1,5 @@
 export * from './utils/index.js';
+export * from './variants/index.js';
 export * from './logging/ring-buffer.js';
 export * from './config/index.js';
 export * from './db/index.js';

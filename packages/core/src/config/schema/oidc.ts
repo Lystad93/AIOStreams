@@ -76,7 +76,7 @@ const nullableUrl = z.union([
     const trimmed = value.trim();
     if (trimmed === '') return null;
     try {
-      return new URL(trimmed).toString().replace(/\/$/, '');
+      return new URL(trimmed).toString();
     } catch {
       ctx.addIssue({ code: 'custom', message: `Invalid URL: "${value}"` });
       return z.NEVER;
@@ -118,8 +118,8 @@ export const oidcSchema = {
     default: null,
     label: 'Issuer URL',
     description: {
-      ui: "Your provider's issuer URL, e.g. `https://auth.example.com`. Its `/.well-known/openid-configuration` is fetched automatically. Register `<your base URL>/api/v1/auth/oidc/callback` as an allowed redirect URI.",
-      env: 'OIDC issuer URL. Discovery is performed against {issuer}/.well-known/openid-configuration. Register <BASE_URL>/api/v1/auth/oidc/callback as an allowed redirect URI with your provider.',
+      ui: "Your provider's issuer URL, e.g. `https://auth.example.com`. Its `/.well-known/openid-configuration` is fetched automatically. Copy it exactly as your provider states it, including any trailing slash. Register `<your base URL>/api/v1/auth/oidc/callback` as an allowed redirect URI.",
+      env: 'OIDC issuer URL. Discovery is performed against {issuer}/.well-known/openid-configuration. Copy it exactly as your provider states it, including any trailing slash. Register <BASE_URL>/api/v1/auth/oidc/callback as an allowed redirect URI with your provider.',
     },
     env: 'AIOSTREAMS_OIDC_ISSUER',
     requiresRestart: false,

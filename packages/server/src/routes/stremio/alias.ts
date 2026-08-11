@@ -24,7 +24,11 @@ router.get(
 
     const redirectPath = `/stremio/${configuration.uuid}/${configuration.encryptedPassword}${wildcardPath ? `/${wildcardPath}` : ''}`;
 
-    res.redirect(redirectPath);
+    // Keep the query string: it carries the config variant selector.
+    const queryIndex = req.originalUrl.indexOf('?');
+    const query = queryIndex === -1 ? '' : req.originalUrl.slice(queryIndex);
+
+    res.redirect(`${redirectPath}${query}`);
   }
 );
 

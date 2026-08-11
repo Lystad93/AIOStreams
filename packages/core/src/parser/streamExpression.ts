@@ -8,7 +8,7 @@ import {
 import bytes from 'bytes';
 import { formatZodError } from '../utils/config.js';
 import { ZodError } from 'zod';
-import { PASSTHROUGH_STAGES } from '../utils/constants.js';
+import { PASSTHROUGH_STAGES, SERVICES } from '../utils/constants.js';
 import { parseBitrate } from './utils.js';
 import { createLogger } from '../logging/logger.js';
 import { ExpressionContext } from '../streams/context.js';
@@ -991,29 +991,10 @@ export abstract class StreamExpressionEngine {
           'You must provide one or more service string parameters'
         );
       } else if (
-        !services.every((s) =>
-          [
-            'realdebrid',
-            'debridlink',
-            'alldebrid',
-            'torbox',
-            'pikpak',
-            'seedr',
-            'offcloud',
-            'premiumize',
-            'easynews',
-            'nzbdav',
-            'altmount',
-            'stremio_nntp',
-            'stremthru_newz',
-            'easydebrid',
-            'debrider',
-            'aiostreams',
-          ].includes(s)
-        )
+        !services.every((s) => (SERVICES as readonly string[]).includes(s))
       ) {
         throw new Error(
-          'Service must be a string and one of: realdebrid, debridlink, alldebrid, torbox, pikpak, seedr, offcloud, premiumize, easynews, nzbdav, altmount, stremio_nntp, stremthru_newz, easydebrid, debrider, aiostreams'
+          `Service must be a string and one of: ${SERVICES.join(', ')}`
         );
       }
       return streams.filter((stream) =>

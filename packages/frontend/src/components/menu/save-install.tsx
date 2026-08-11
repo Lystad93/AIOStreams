@@ -9,6 +9,7 @@ import {
   CreateUserResponse,
 } from '@/lib/api';
 import { PageWrapper } from '@/components/shared/page-wrapper';
+import { cn } from '@/components/ui/core/styling';
 import { Alert } from '@/components/ui/alert';
 import { SettingsCard } from '../shared/settings-card';
 import { toast } from 'sonner';
@@ -31,6 +32,7 @@ import { copyToClipboard } from '@/utils/clipboard';
 import { PageControls } from '../shared/page-controls';
 import { useDisclosure } from '@/hooks/disclosure';
 import { Modal } from '../ui/modal';
+import { Select } from '../ui/select';
 import { Switch } from '../ui/switch';
 import { TemplateExportModal } from '../shared/templates/export-modal';
 import { ConfigTemplatesModal } from '../shared/templates';
@@ -40,7 +42,7 @@ import {
   ConfirmationDialog,
   useConfirmationDialog,
 } from '../shared/confirmation-dialog';
-import { UserData } from '@aiostreams/core';
+import { UserData, VariantSelectorLocation } from '@aiostreams/core';
 import { redactPresetOptions } from '@/lib/preset-credentials';
 import { useSave } from '@/context/save';
 import { FiExternalLink } from 'react-icons/fi';
@@ -357,6 +359,86 @@ function CompatibleClientLogos() {
   );
 }
 
+interface VariantSelectorProps {
+  variants: NonNullable<UserData['variants']>;
+  selected: string[];
+  onChange: (selected: string[]) => void;
+  location: VariantSelectorLocation;
+  onLocationChange: (location: VariantSelectorLocation) => void;
+}
+
+function VariantSelector({
+  variants,
+  selected,
+  onChange,
+  location,
+  onLocationChange,
+}: VariantSelectorProps) {
+  const toggle = (id: string) =>
+    onChange(
+      selected.includes(id)
+        ? selected.filter((value) => value !== id)
+        : [...selected, id]
+    );
+
+  const pill = (active: boolean) =>
+    cn(
+      'px-2.5 py-1 text-xs font-medium rounded-full border transition-colors',
+      active
+        ? 'bg-[--brand]/20 text-[--brand] border-[--brand]/50'
+        : 'bg-transparent text-[--muted] border-[--border] hover:bg-[--subtle]'
+    );
+
+  return (
+    <div className="w-full rounded-xl border border-gray-700 bg-gray-800/30 p-5 shadow-inner">
+      <h3 className="text-lg font-semibold text-white">Variant</h3>
+      <p className="text-sm text-[--muted] mt-1">
+        The links below install the selected variant. Each one appears as a
+        separate addon in your client; pick more than one to combine them.
+      </p>
+      <div className="flex flex-wrap gap-1.5 mt-4">
+        <button
+          type="button"
+          onClick={() => onChange([])}
+          className={pill(selected.length === 0)}
+        >
+          Base config
+        </button>
+        {variants.map((variant) => (
+          <button
+            key={variant.id}
+            type="button"
+            onClick={() => toggle(variant.id)}
+            className={pill(selected.includes(variant.id))}
+          >
+            {variant.name || variant.id}
+          </button>
+        ))}
+      </div>
+      {selected.length > 0 && (
+        <div className="mt-5 pt-4 border-t border-gray-700/50 max-w-md">
+          <Select
+            label="Selector location"
+            help={
+              location === 'path'
+                ? 'In the path, as /v/id. Survives clients that rebuild request URLs from the base and would drop a query string.'
+                : 'In the query string, as ?v=id. Some clients drop it after the manifest.'
+            }
+            value={location}
+            onValueChange={(value) =>
+              onLocationChange(value as VariantSelectorLocation)
+            }
+            options={[
+              { value: 'path', label: 'Path segment (/v/)' },
+              { value: 'query', label: 'Query parameter (?v=)' },
+            ]}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface InstallCardProps {
   encodedManifest: string;
   manifestUrl: string;
@@ -374,12 +456,14 @@ interface InstallCardProps {
   nabIndexerDisabledReason?: string;
   disableSearchApiCard?: boolean;
   searchApiDisabledReason?: string;
+  variantSelector?: React.ReactNode;
 }
 
 function InstallCard({
   encodedManifest,
   manifestUrl,
   usingAlias,
+  variantSelector,
   onCopyManifestUrl,
   onOpenChillio,
   onOpenSeanime,
@@ -400,6 +484,7 @@ function InstallCard({
       description="Install your addon using your preferred method. If a reinstall is necessary, a pop-up will tell you — otherwise, you do not need to reinstall."
     >
       <div className="flex flex-col gap-6">
+        {variantSelector}
         <div className="w-full rounded-xl border border-gray-700 bg-gray-800/30 p-5 shadow-inner">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 lg:items-center">
             <div className="flex flex-col gap-4">
@@ -664,6 +749,8 @@ interface StremioCustomSourceModalProps {
 }
 
 const DEFAULT_NAME_TEMPLATE = '{catalog.name} - {catalog.type}';
+
+const VARIANT_LOCATION_STORAGE_KEY = 'aiostreams:install:variant-location';
 
 const STREMIO_CUSTOM_SOURCE_STORAGE_KEYS = {
   manifestUrl: 'aiostreams:seanime:stremio-custom-source:manifest-url',
@@ -1322,6 +1409,16 @@ function Content() {
   const importMenuModal = useDisclosure(false);
   const [filterCredentialsInExport, setFilterCredentialsInExport] =
     React.useState(true);
+  const [selectedVariants, setSelectedVariants] = React.useState<string[]>([]);
+  const [variantLocation, setVariantLocation] =
+    React.useState<VariantSelectorLocation>(() =>
+      safeGetLocalStorageItem(VARIANT_LOCATION_STORAGE_KEY) === 'query'
+        ? 'query'
+        : 'path'
+    );
+  React.useEffect(() => {
+    safeSetLocalStorageItem(VARIANT_LOCATION_STORAGE_KEY, variantLocation);
+  }, [variantLocation]);
   const chillLinkModal = useDisclosure(false);
   const seanimeModal = useDisclosure(false);
   const stremioCustomSourceModal = useDisclosure(false);
@@ -1446,6 +1543,11 @@ function Content() {
         ...service,
         credentials: {},
       })),
+      // Scripts commonly carry a swapped service credential.
+      variants: clonedData?.variants?.map((variant) => ({
+        ...variant,
+        script: '# [redacted] variant scripts may contain credentials',
+      })),
       proxy: {
         ...clonedData?.proxy,
         credentials: undefined,
@@ -1497,13 +1599,29 @@ function Content() {
     : uuidRegex.test(uuid)
       ? (profileAlias ?? null)
       : uuid;
+  const enabledVariants = (userData.variants ?? []).filter(
+    (variant) => variant.enabled !== false
+  );
+  const activeVariants = selectedVariants.filter((id) =>
+    enabledVariants.some((variant) => variant.id === id)
+  );
+  const variantIds = activeVariants.map(encodeURIComponent).join(',');
+  const variantPath =
+    activeVariants.length && variantLocation === 'path'
+      ? `/v/${variantIds}`
+      : '';
+  const variantQuery =
+    activeVariants.length && variantLocation === 'query'
+      ? `?v=${variantIds}`
+      : '';
+
   const manifestUrl = !uuid
     ? ''
     : aliasForInstall
-      ? `${baseUrl}/stremio/u/${aliasForInstall}/manifest.json`
-      : `${baseUrl}/stremio/${uuid}/${encryptedPassword}/manifest.json`;
+      ? `${baseUrl}/stremio/u/${aliasForInstall}${variantPath}/manifest.json${variantQuery}`
+      : `${baseUrl}/stremio/${uuid}/${encryptedPassword}${variantPath}/manifest.json${variantQuery}`;
   const chillLinkUrl = uuid
-    ? `${baseUrl}/chilllink/${uuid}/${encryptedPassword}`
+    ? `${baseUrl}/chilllink/${uuid}/${encryptedPassword}${variantPath}${variantQuery}`
     : '';
   const encodedManifest = encodeURIComponent(manifestUrl);
 
@@ -1511,10 +1629,10 @@ function Content() {
     !!uuid && !!encryptedPassword && uuidRegex.test(uuid);
 
   const seanimePluginUrl = hasSeanimePersonalUrl
-    ? `${baseUrl}/seanime/${uuid}/${encryptedPassword}/extensions/aiostreams-plugin.json`
+    ? `${baseUrl}/seanime/${uuid}/${encryptedPassword}${variantPath}/extensions/aiostreams-plugin.json${variantQuery}`
     : `${baseUrl}/seanime/extensions/aiostreams-plugin.json`;
   const seanimeProviderUrl = hasSeanimePersonalUrl
-    ? `${baseUrl}/seanime/${uuid}/${encryptedPassword}/extensions/aiostreams-torrent-provider.json`
+    ? `${baseUrl}/seanime/${uuid}/${encryptedPassword}${variantPath}/extensions/aiostreams-torrent-provider.json${variantQuery}`
     : `${baseUrl}/seanime/extensions/aiostreams-torrent-provider.json`;
   const copyManifestUrl = async () => {
     await copyToClipboard(manifestUrl, {
@@ -1709,6 +1827,17 @@ function Content() {
               encodedManifest={encodedManifest}
               manifestUrl={manifestUrl}
               usingAlias={!!aliasForInstall}
+              variantSelector={
+                enabledVariants.length > 0 ? (
+                  <VariantSelector
+                    variants={enabledVariants}
+                    selected={activeVariants}
+                    onChange={setSelectedVariants}
+                    location={variantLocation}
+                    onLocationChange={setVariantLocation}
+                  />
+                ) : undefined
+              }
               onCopyManifestUrl={copyManifestUrl}
               onOpenChillio={chillLinkModal.open}
               onOpenSeanime={seanimeModal.open}

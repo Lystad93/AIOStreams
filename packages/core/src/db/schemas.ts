@@ -447,6 +447,43 @@ export const CacheAndPlaySchema = z
 
 export type CacheAndPlay = z.infer<typeof CacheAndPlaySchema>;
 
+/**
+ * Config Expression Language script with a runtime-configurable maximum length
+ * pulled from `config.userLimits.variants.maxScriptLength`.
+ */
+function variantScript() {
+  return z.string().superRefine((value, ctx) => {
+    const max = config.userLimits.variants.maxScriptLength;
+    if (value.length > max) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `Variant script exceeds maximum length of ${max} characters.`,
+      });
+    }
+  });
+}
+
+export const VariantSchema = z.object({
+  // The id appears verbatim in the install URL and in the Stremio addon id.
+  id: z
+    .string()
+    .regex(
+      /^[a-z0-9][a-z0-9_-]{0,31}$/,
+      'Variant id must be 1-32 characters: lowercase letters, digits, "-" or "_", starting with a letter or digit.'
+    ),
+  /** Display label only. Use `set addonName = ...` to rebrand in Stremio. */
+  name: z.string().min(1).max(64).optional(),
+  enabled: z.boolean().optional(),
+  script: variantScript(),
+});
+
+export type Variant = z.infer<typeof VariantSchema>;
+
+export const VariantSelectorLocationSchema = z.enum(['query', 'path']);
+export type VariantSelectorLocation = z.infer<
+  typeof VariantSelectorLocationSchema
+>;
+
 const MergeStrategy = z.enum(['inherit', 'extend', 'override']);
 const BinaryMergeStrategy = z.enum(['inherit', 'override']);
 
@@ -476,6 +513,25 @@ export type ParentConfig = z.infer<typeof ParentConfigSchema>;
 export const UserDataSchema = z.object({
   uuid: z.string().uuid().optional(),
   parentConfig: ParentConfigSchema.optional(),
+  variants: z
+    .array(VariantSchema)
+    .superRefine((variants, ctx) => {
+      const seen = new Set<string>();
+      for (const variant of variants) {
+        if (seen.has(variant.id)) {
+          ctx.addIssue({
+            code: 'custom',
+            message: `Duplicate variant id "${variant.id}".`,
+          });
+        }
+        seen.add(variant.id);
+      }
+    })
+    .optional(),
+  /** Request scoped: the variant ids applied to this instance. Never persisted. */
+  activeVariants: z.array(z.string()).optional(),
+  /** Request scoped: where the selector sat in the URL. Never persisted. */
+  variantSelectorLocation: VariantSelectorLocationSchema.optional(),
   encryptedPassword: z.string().min(1).optional(),
   trusted: z.boolean().optional(),
   showChanges: z.boolean().optional(),
@@ -1581,6 +1637,16 @@ const StatusResponseSchema = z.object({
     selSyncAccess: z.object({
       level: z.enum(['all', 'trusted']),
       trustedUrls: z.array(z.string()).optional(),
+    }),
+    variants: z.object({
+      access: z.enum(['none', 'trusted', 'all']),
+      max: z.number(),
+      maxScriptLength: z.number(),
+      maxInstructions: z.number(),
+      maxActive: z.number(),
+      maxValueDepth: z.number(),
+      maxPathSegments: z.number(),
+      maxPathMatches: z.number(),
     }),
     loggingSensitiveInfo: z.boolean(),
     searchApiDisabled: z.boolean(),

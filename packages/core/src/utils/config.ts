@@ -28,6 +28,7 @@ import {
   APIError,
 } from './index.js';
 import { assertConfigAccessKey } from './auth.js';
+import { validateVariants } from '../variants/runtime.js';
 import { parseSyncedUrl } from './sync.js';
 import { ZodError } from 'zod';
 import {
@@ -308,6 +309,16 @@ export async function validateConfig(
       }
     }
   }
+
+  // Static only: a full validateConfig per variant would recurse here and
+  // refetch every addon manifest.
+  validateVariants(config, (patched) => {
+    const parsed = UserDataSchema.safeParse(patched);
+    return {
+      success: parsed.success,
+      error: parsed.success ? undefined : parsed.error.issues[0]?.message,
+    };
+  });
 
   if (config.groups?.groupings) {
     for (const group of config.groups.groupings) {
@@ -1481,9 +1492,11 @@ const BRANDING_FIELDS: (keyof UserData)[] = [
 
 // Personal fields are never inherited — always use the child's own values.
 // Includes per-user identity and per-instance state that has no meaning across configs.
+// Variants reference this config's own instanceIds and saved formatter names,
+// so a parent's would target fields the child lacks.
 // prettier-ignore
 const PERSONAL_FIELDS: (keyof UserData)[] = [
-  'appliedTemplates',
+  'appliedTemplates', 'variants',
 ];
 
 /**

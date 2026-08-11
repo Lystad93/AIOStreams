@@ -14,6 +14,9 @@ import {
   SearchApiResponseData,
   SearchApiResultField,
   StremioTransformer,
+  applyVariants,
+  parseVariantSelector,
+  VARIANT_QUERY_PARAM,
 } from '@aiostreams/core';
 import { streamApiRateLimiter } from '../../middlewares/ratelimit.js';
 import { ApiResponse, createResponse } from '../../utils/responses.js';
@@ -115,6 +118,18 @@ router.get(
         throw new APIError(constants.ErrorCode.USER_INVALID_DETAILS);
       }
       userData.ip = req.userIp;
+      try {
+        const selected = parseVariantSelector(req.query[VARIANT_QUERY_PARAM]);
+        if (selected.length) {
+          userData = applyVariants(userData, selected).userData;
+        }
+      } catch (error: any) {
+        throw new APIError(
+          constants.ErrorCode.USER_INVALID_CONFIG,
+          undefined,
+          error.message
+        );
+      }
       userData = await syncUserDataUrls(userData);
       try {
         userData = await validateConfig(userData, {

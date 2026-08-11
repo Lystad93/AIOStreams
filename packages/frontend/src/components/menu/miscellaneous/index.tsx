@@ -4,11 +4,12 @@ import { MenuTabs } from '../../shared/menu-tabs';
 import { useMode } from '@/context/mode';
 import { useSubTab } from '@/context/sub-tab';
 import { FaRocket, FaPlay, FaEye } from 'react-icons/fa';
-import { FiSettings, FiLink } from 'react-icons/fi';
+import { FiSettings, FiLink, FiLayers } from 'react-icons/fi';
 import { BackgroundOptimization } from './_components/background-optimization';
 import { PlaybackBehavior } from './_components/playback-behavior';
 import { DisplayDebug } from './_components/display-debug';
 import { ParentConfig } from './_components/parent-config';
+import { Variants } from './_components/variants';
 
 export function MiscellaneousMenu() {
   return (
@@ -88,6 +89,25 @@ function Content() {
             label: 'Parent Config',
             icon: <FiLink className="w-4 h-4" />,
             content: <ParentConfig />,
+          },
+          {
+            value: 'variants',
+            label: 'Variants',
+            icon: <FiLayers className="w-4 h-4" />,
+            content:
+              mode === 'pro' ? (
+                <Variants />
+              ) : (
+                <div className="flex flex-col items-center justify-center py-16 text-center gap-2">
+                  <FiSettings className="w-10 h-10 text-[--muted]" />
+                  <p className="text-lg font-semibold">
+                    Advanced Mode Required
+                  </p>
+                  <p className="text-sm text-[--muted]">
+                    Variants are only available in Advanced mode.
+                  </p>
+                </div>
+              ),
           },
         ]}
         activeTab={activeTab}
