@@ -133,8 +133,13 @@ grep -h "id:" /opt/docker/apps/aiostreams-fork/AIOStreams/packages/core/src/db/m
 
 Generate `resources/metadata.json` — **required, and easy to miss**:
 
+There is no Node on the VPS — everything runs in containers — so run it in a
+throwaway one. The script needs only Node builtins plus `git`, no `node_modules`.
+`-u $(id -u)` keeps the written file owned by you and satisfies git's
+ownership check:
+
 ```bash
-cd /opt/docker/apps/aiostreams-fork/AIOStreams && node scripts/generateMetadata.cjs
+cd /opt/docker/apps/aiostreams-fork/AIOStreams && docker run --rm -v "$PWD":/app -w /app -u "$(id -u):$(id -g)" -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/app node:24 node scripts/generateMetadata.cjs
 ```
 
 The file is gitignored, so it is never in the checkout. Upstream's CI generates
@@ -144,6 +149,11 @@ it and a local `docker compose build` does not. Without it the addon logs
 `Error loading metadata.json` on every boot and runs with empty metadata — the
 read is wrapped in a try/catch (`packages/core/src/utils/env.ts`), so it fails
 silently rather than crashing. Nothing else in this repo generates it.
+
+`version` comes from `package.json` and is always correct. `tag` will be empty:
+the VPS clone has only `origin`, and the fork's tags were never pushed to
+GitHub. Cosmetic — nothing reads `tag` that `version` doesn't cover. To fill it
+in, `git push origin --tags` from the Mac once, then fetch on the VPS.
 
 Then build:
 
