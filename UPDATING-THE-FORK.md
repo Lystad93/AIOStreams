@@ -131,6 +131,20 @@ Verify content arrived:
 grep -h "id:" /opt/docker/apps/aiostreams-fork/AIOStreams/packages/core/src/db/migrations/09*.ts
 ```
 
+Generate `resources/metadata.json` — **required, and easy to miss**:
+
+```bash
+cd /opt/docker/apps/aiostreams-fork/AIOStreams && node scripts/generateMetadata.cjs
+```
+
+The file is gitignored, so it is never in the checkout. Upstream's CI generates
+it into the build context before `docker build`
+(`.github/workflows/deploy-docker.yml`), which is why the *published* image has
+it and a local `docker compose build` does not. Without it the addon logs
+`Error loading metadata.json` on every boot and runs with empty metadata — the
+read is wrapped in a try/catch (`packages/core/src/utils/env.ts`), so it fails
+silently rather than crashing. Nothing else in this repo generates it.
+
 Then build:
 
 ```bash
