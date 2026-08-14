@@ -109,7 +109,11 @@ export interface RunJobInput {
    * Track kinds the user accepts. Unset means both, matching the provider-side
    * default — these are ordinary subtitles, only skipped when asked.
    */
-  allowTracks?: { forced?: boolean; hearingImpaired?: boolean };
+  allowTracks?: {
+    forced?: boolean;
+    hearingImpaired?: boolean;
+    preferHearingImpaired?: boolean;
+  };
   targetLanguage: string;
   apiKey: string;
   providerId: string;
@@ -274,7 +278,10 @@ async function runExactJob(input: RunJobInput): Promise<void> {
       input.filename,
       input.sourceLanguages,
       job.uuid,
-      { contentId: job.contentId, durationMs: input.durationMs }
+      { contentId: job.contentId, durationMs: input.durationMs },
+      {
+        preferHearingImpaired: input.allowTracks?.preferHearingImpaired,
+      }
     );
 
     if (reusable) {

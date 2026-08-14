@@ -945,6 +945,21 @@ export const UserDataSchema = z.object({
        */
       includeHearingImpaired: z.boolean().optional(),
       /**
+       * Actively *prefer* SDH rather than merely tolerating it.
+       *
+       * Everywhere a subtitle is chosen, SDH is normally demoted — it is
+       * cluttered with sound cues for a viewer who can hear them. For a viewer
+       * who cannot, that demotion is exactly backwards: it silently hands them
+       * the one track missing the information they need whenever both exist.
+       *
+       * Setting this reverses the tiebreak in all three places a choice is
+       * made — embedded tracks, stored sources and external candidates — so a
+       * translation is also produced *from* the SDH track and inherits its
+       * sound cues. It only ever breaks ties: language and release matching
+       * still decide first.
+       */
+      preferHearingImpaired: z.boolean().optional(),
+      /**
        * Forced subtitles only cover foreign-language dialogue in an otherwise
        * understood soundtrack, so they look broken when picked as a full track.
        */

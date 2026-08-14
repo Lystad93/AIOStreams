@@ -4,7 +4,7 @@ import { parseSrt, serializeSrt } from './srt.js';
 import { encodeSubtitleToken, decodeSubtitleToken } from './token.js';
 import { releaseHash } from './release-lookup.js';
 import { estimateEtaSeconds } from './pipeline.js';
-import { pickTrack } from './extract.js';
+import { hasSubtitleInLanguage, pickTrack } from './extract.js';
 import { reassembleTranslations } from './translate.js';
 import { isStaleJob, blocksNewAttempt } from './job-store.js';
 import { pickSource } from './sources.js';
@@ -125,6 +125,150 @@ test('pickTrack: returns undefined when only bitmap tracks exist', () => {
   assert.equal(pickTrack(tracks, ['English']), undefined);
 });
 
+test('pickTrack: SDH demotion applies when no track carries a forced flag', () => {
+  // Regression: the comparator did `Number(a.forced) - Number(b.forced)` on an
+  // optional field, so two tracks with no forced disposition produced NaN —
+  // which is `!== 0`, so it was returned and every tiebreak below it was
+  // skipped. Most files have no forced flag at all, so the SDH demotion
+  // silently did nothing. SDH is listed FIRST here so passing cannot be an
+  // accident of the input order.
+  const tracks: ProbedSubtitleTrack[] = [
+    {
+      index: 0,
+      codec: 'subrip',
+      isText: true,
+      language: 'eng',
+      hearingImpaired: true,
+    },
+    { index: 1, codec: 'subrip', isText: true, language: 'eng' },
+  ];
+  assert.equal(pickTrack(tracks, ['English'])?.index, 1);
+});
+
+test('pickTrack: preferHearingImpaired reverses the SDH demotion, not the forced one', () => {
+  const tracks: ProbedSubtitleTrack[] = [
+    { index: 0, codec: 'subrip', isText: true, language: 'eng' },
+    {
+      index: 1,
+      codec: 'subrip',
+      isText: true,
+      language: 'eng',
+      hearingImpaired: true,
+    },
+  ];
+  // Default: SDH is cluttered for a viewer who can hear the sound cues.
+  assert.equal(pickTrack(tracks, ['English'])?.index, 0);
+  // Preferring it flips exactly that tiebreak.
+  assert.equal(
+    pickTrack(tracks, ['English'], { preferHearingImpaired: true })?.index,
+    1
+  );
+
+  // Forced stays demoted regardless — it is partial for everyone, so an SDH
+  // preference must not drag a forced track to the top.
+  const withForced: ProbedSubtitleTrack[] = [
+    {
+      index: 0,
+      codec: 'subrip',
+      isText: true,
+      language: 'eng',
+      forced: true,
+      hearingImpaired: true,
+    },
+    { index: 1, codec: 'subrip', isText: true, language: 'eng' },
+  ];
+  assert.equal(
+    pickTrack(withForced, ['English'], { preferHearingImpaired: true })?.index,
+    1
+  );
+});
+
+test('pickTrack: language still outranks an SDH preference', () => {
+  // The preference is a tiebreak. A viewer who reads Norwegian and prefers SDH
+  // must still get Norwegian, not an English SDH track.
+  const tracks: ProbedSubtitleTrack[] = [
+    {
+      index: 0,
+      codec: 'subrip',
+      isText: true,
+      language: 'eng',
+      hearingImpaired: true,
+    },
+    { index: 1, codec: 'subrip', isText: true, language: 'nor' },
+  ];
+  assert.equal(
+    pickTrack(tracks, ['Norwegian', 'English'], {
+      preferHearingImpaired: true,
+    })?.index,
+    1
+  );
+});
+
+test('hasSubtitleInLanguage: a bitmap track still counts as having the language', () => {
+  // The divergence from pickTrack that matters. pickTrack rejects bitmap
+  // because it cannot be converted to SRT; here the question is whether the
+  // viewer already has the language, and a player renders PGS natively — so
+  // translating this release would be wasted work.
+  const tracks: ProbedSubtitleTrack[] = [
+    { index: 0, codec: 'subrip', isText: true, language: 'eng' },
+    { index: 1, codec: 'hdmv_pgs_subtitle', isText: false, language: 'nor' },
+  ];
+  assert.equal(pickTrack(tracks, ['Norwegian'])?.language, 'eng');
+  assert.equal(hasSubtitleInLanguage(tracks, 'Norwegian'), true);
+});
+
+test('hasSubtitleInLanguage: a forced track never satisfies the language', () => {
+  // Forced covers only foreign dialogue, so the release still needs a full
+  // subtitle — this is the case that must NOT skip pre-translation.
+  const forcedOnly: ProbedSubtitleTrack[] = [
+    { index: 0, codec: 'subrip', isText: true, language: 'eng' },
+    { index: 1, codec: 'subrip', isText: true, language: 'nor', forced: true },
+  ];
+  assert.equal(hasSubtitleInLanguage(forcedOnly, 'Norwegian'), false);
+
+  // A full track alongside the forced one does satisfy it.
+  assert.equal(
+    hasSubtitleInLanguage(
+      [
+        ...forcedOnly,
+        { index: 2, codec: 'subrip', isText: true, language: 'nor' },
+      ],
+      'Norwegian'
+    ),
+    true
+  );
+});
+
+test('hasSubtitleInLanguage: SDH counts unless the user excluded it', () => {
+  const sdhOnly: ProbedSubtitleTrack[] = [
+    {
+      index: 0,
+      codec: 'subrip',
+      isText: true,
+      language: 'nor',
+      hearingImpaired: true,
+    },
+  ];
+  // SDH covers all dialogue, so by default it means "already have it".
+  assert.equal(hasSubtitleInLanguage(sdhOnly, 'Norwegian'), true);
+  // A user who excluded SDH would not watch it, so it does not satisfy.
+  assert.equal(
+    hasSubtitleInLanguage(sdhOnly, 'Norwegian', { hearingImpaired: false }),
+    false
+  );
+});
+
+test('hasSubtitleInLanguage: other languages and untagged tracks do not count', () => {
+  const tracks: ProbedSubtitleTrack[] = [
+    { index: 0, codec: 'subrip', isText: true, language: 'eng' },
+    { index: 1, codec: 'subrip', isText: true, language: 'swe' },
+    { index: 2, codec: 'subrip', isText: true },
+  ];
+  assert.equal(hasSubtitleInLanguage(tracks, 'Norwegian'), false);
+  // ISO code on the track, display name from the UI — must still match.
+  assert.equal(hasSubtitleInLanguage(tracks, 'English'), true);
+});
+
 test('reassembleTranslations: maps by index and keeps originals for skipped lines', () => {
   const originals = ['one', 'two', 'three', 'four'];
   // Model dropped index 2 and returned them out of order.
@@ -236,6 +380,19 @@ test('pickSource: honours the user-ordered language priority, demotes forced/SDH
   // No preference expressed → still returns something usable.
   assert.ok(pickSource(pool, []));
   assert.equal(pickSource([], ['English']), undefined);
+
+  // preferHearingImpaired flips the SDH tiebreak, so the translation is made
+  // from the SDH source and inherits its sound cues.
+  const withSdh = [
+    mk({ lang: 'English' }),
+    mk({ lang: 'English', hearingImpaired: true }),
+  ];
+  assert.equal(pickSource(withSdh, ['English'])?.hearingImpaired, false);
+  assert.equal(
+    pickSource(withSdh, ['English'], { preferHearingImpaired: true })
+      ?.hearingImpaired,
+    true
+  );
 });
 
 const HOUR = 60 * 60 * 1000;

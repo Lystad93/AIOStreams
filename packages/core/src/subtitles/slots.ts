@@ -34,6 +34,7 @@ import {
   getReleaseDurations,
 } from './release-lookup.js';
 import { estimateEtaSeconds, startExactJob } from './pipeline.js';
+import { hasSubtitleInLanguage, probeSubtitleTracks } from './extract.js';
 import { hasReusableSource, sourceScope } from './sources.js';
 import { encodeSubtitleToken, encodeExternalToken } from './token.js';
 import { normaliseReleaseName } from './release-name.js';
@@ -165,11 +166,18 @@ export function resolveSubtitleConfig(userData: UserData): {
 export function resolveTrackPreferences(userData: UserData): {
   forced?: boolean;
   hearingImpaired?: boolean;
+  preferHearingImpaired?: boolean;
 } {
   const ext = userData.externalSubtitles;
   return {
     forced: ext?.includeForced !== false,
-    hearingImpaired: ext?.includeHearingImpaired !== false,
+    // Preferring SDH implies accepting it, whatever the include switch says —
+    // otherwise the two settings contradict each other and the user gets
+    // neither.
+    hearingImpaired:
+      ext?.preferHearingImpaired === true ||
+      ext?.includeHearingImpaired !== false,
+    preferHearingImpaired: ext?.preferHearingImpaired === true,
   };
 }
 
@@ -272,7 +280,11 @@ export async function buildSubtitleSlots(
     served.filename,
     cfg.sourceLanguages,
     uuid,
-    { contentId: id, durationMs: served.durationMs }
+    { contentId: id, durationMs: served.durationMs },
+    {
+      preferHearingImpaired:
+        resolveTrackPreferences(userData).preferHearingImpaired,
+    }
   );
   const display = displayTokens(userData);
   const eta = fmtEta(
@@ -449,7 +461,11 @@ export function resolveExternalConfig(userData: UserData): {
     },
     filters: {
       providers,
-      hearingImpaired: ext?.includeHearingImpaired !== false,
+      // Preferring SDH implies fetching it, even if the include switch was
+      // left off — otherwise the preference has nothing to rank.
+      hearingImpaired:
+        ext?.preferHearingImpaired === true ||
+        ext?.includeHearingImpaired !== false,
       forced: ext?.includeForced !== false,
     },
   };
@@ -611,6 +627,7 @@ export async function buildExternalSlots(
   // Needed before the candidate list is finalised: the rescue is gated on the
   // target language, and on knowing what the playing file's framerate is.
   const translationCfg = resolveSubtitleConfig(userData);
+  const preferSdh = !!resolveTrackPreferences(userData).preferHearingImpaired;
   const measuredSource = await SubtitleSourceRepository.findByFilename(
     filename,
     sourceScope(uuid)
@@ -666,7 +683,20 @@ export async function buildExternalSlots(
         conversion?: ReturnType<typeof detectFpsConversion>;
       };
     })
-    .sort((a, b) => b.evaluation.score - a.evaluation.score);
+    .sort((a, b) => {
+      const byScore = b.evaluation.score - a.evaluation.score;
+      if (byScore !== 0) return byScore;
+      // Equal evidence for the release: let the SDH preference decide. Only a
+      // tiebreak — a better-matched non-SDH subtitle still wins, because a
+      // subtitle that is out of sync helps nobody.
+      if (preferSdh) {
+        return (
+          Number(!!b.match.candidate.hearingImpaired) -
+          Number(!!a.match.candidate.hearingImpaired)
+        );
+      }
+      return 0;
+    });
 
   // An identity contradiction is a reject, not a low score, and anything under
   // the floor is computed but never rendered (§4, §6).
@@ -1037,6 +1067,35 @@ export async function precacheTranslateExact(
     return;
   }
 
+  const allowTracks = resolveTrackPreferences(userData);
+
+  // The release may already carry the target language — a native release, or an
+  // English one shipped with the user's language. Translating it would spend a
+  // download, a demux and a full LLM pass producing something the player can
+  // already display. Worth checking here and nowhere else: interactively the
+  // user sees the existing track in the list and chooses for themselves, but
+  // precache spends the money silently.
+  //
+  // The probe reads only the container header, so it costs a small fraction of
+  // the work it avoids.
+  try {
+    const tracks = await probeSubtitleTracks(stream.url);
+    if (hasSubtitleInLanguage(tracks, cfg.targetLanguage, allowTracks)) {
+      logger.debug(
+        { contentId, target: cfg.targetLanguage, release: stream.filename },
+        'skipping pre-translation — release already carries the target language'
+      );
+      return;
+    }
+  } catch (err) {
+    // A probe failure is not itself a reason to skip: fall through and let the
+    // extraction path fail with the real error, exactly as it did before.
+    logger.debug(
+      { err: err instanceof Error ? err.message : String(err), contentId },
+      'track probe failed while pre-translating; continuing'
+    );
+  }
+
   const job: SubtitleJob = {
     ...key,
     status: 'pending',
@@ -1053,7 +1112,7 @@ export async function precacheTranslateExact(
     job,
     playbackUrl: stream.url,
     sourceLanguages: cfg.sourceLanguages,
-    allowTracks: resolveTrackPreferences(userData),
+    allowTracks,
     targetLanguage: cfg.targetLanguage,
     apiKey: cfg.apiKey,
     providerId: cfg.provider,

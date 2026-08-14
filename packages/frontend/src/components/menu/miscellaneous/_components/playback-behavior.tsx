@@ -309,6 +309,22 @@ export function PlaybackBehavior() {
           }}
         />
         <Switch
+          label="Prefer hearing impaired (SDH)"
+          side="right"
+          disabled={!externalEnabled}
+          help="Pick SDH over a plain subtitle whenever both match equally well — for external results, embedded tracks, and the track a translation is made from, so the translation keeps its sound descriptions. Only breaks ties: a better-synced plain subtitle still wins. Turning this on includes SDH regardless of the switch above."
+          value={userData.externalSubtitles?.preferHearingImpaired ?? false}
+          onValueChange={(value) => {
+            setUserData((prev) => ({
+              ...prev,
+              externalSubtitles: {
+                ...prev.externalSubtitles,
+                preferHearingImpaired: value,
+              },
+            }));
+          }}
+        />
+        <Switch
           label="Include forced"
           side="right"
           disabled={!externalEnabled}

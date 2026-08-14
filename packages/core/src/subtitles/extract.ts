@@ -214,11 +214,19 @@ export async function probeMedia(
 /**
  * Rank text tracks for a preferred source language. Non-forced, matching-lang,
  * non-SDH tracks win; forced/SDH are demoted (they're partial or cluttered).
+ *
+ * `allow.preferHearingImpaired` reverses the SDH half of that: a viewer who
+ * needs sound cues wants the cluttered track, and wants a translation made
+ * from it. Forced stays demoted either way — it is partial for everyone.
  */
 export function pickTrack(
   tracks: ProbedSubtitleTrack[],
   preferredLangs: string[],
-  allow: { forced?: boolean; hearingImpaired?: boolean } = {}
+  allow: {
+    forced?: boolean;
+    hearingImpaired?: boolean;
+    preferHearingImpaired?: boolean;
+  } = {}
 ): ProbedSubtitleTrack | undefined {
   // Demotion isn't enough when a kind is unwanted: on a release whose only
   // track is forced, sorting still returns it. Excluding means "no subtitle"
@@ -244,12 +252,45 @@ export function pickTrack(
   return [...text].sort((a, b) => {
     const byLang = langRank(a) - langRank(b);
     if (byLang !== 0) return byLang;
-    const forced = Number(a.forced) - Number(b.forced);
+    // `!!` matters: these dispositions are optional, and `Number(undefined)` is
+    // NaN, which is never `!== 0`-false — so an unflagged pair used to return
+    // NaN here and skip every tiebreak below it.
+    const forced = Number(!!a.forced) - Number(!!b.forced);
     if (forced !== 0) return forced;
-    const sdh = Number(a.hearingImpaired) - Number(b.hearingImpaired);
-    if (sdh !== 0) return sdh;
+    const sdh = Number(!!a.hearingImpaired) - Number(!!b.hearingImpaired);
+    if (sdh !== 0) return allow.preferHearingImpaired ? -sdh : sdh;
     return a.index - b.index;
   })[0];
+}
+
+/**
+ * Does the file already carry a subtitle the viewer would actually watch in
+ * `lang`?
+ *
+ * This asks a different question from {@link pickTrack} and so filters
+ * differently. `pickTrack` looks for a track to *extract and translate*, so it
+ * needs text it can convert to SRT. This asks whether the language is already
+ * available in the player, and a player renders an embedded bitmap track
+ * (PGS/VobSub) as readily as a text one — so the codec is irrelevant here and
+ * `isText` is deliberately not checked.
+ *
+ * A forced track never counts: it covers only foreign-language dialogue, so a
+ * release carrying one still needs a full subtitle. An SDH track does count,
+ * because it covers all dialogue — unless the user excluded SDH, in which case
+ * it isn't something they would watch and so doesn't satisfy the need.
+ */
+export function hasSubtitleInLanguage(
+  tracks: ProbedSubtitleTrack[],
+  lang: string,
+  allow: { hearingImpaired?: boolean } = {}
+): boolean {
+  const want = normaliseLanguage(lang) ?? lang;
+  return tracks.some((t) => {
+    if (t.forced) return false;
+    if (allow.hearingImpaired === false && t.hearingImpaired) return false;
+    const name = normaliseLanguage(t.language ?? '');
+    return !!name && name === want;
+  });
 }
 
 /**
@@ -307,7 +348,11 @@ function extractionTimeoutMs(): number {
 export async function extractBestSubtitle(
   url: string,
   preferredLangs: string[],
-  allow: { forced?: boolean; hearingImpaired?: boolean } = {}
+  allow: {
+    forced?: boolean;
+    hearingImpaired?: boolean;
+    preferHearingImpaired?: boolean;
+  } = {}
 ): Promise<{
   srt: string;
   track: ProbedSubtitleTrack;

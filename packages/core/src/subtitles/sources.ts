@@ -34,10 +34,15 @@ export function sourceScope(uuid: string): string | undefined {
  * languages. Mirrors {@link pickTrack}: preferred language first, then plain
  * tracks over forced/SDH (a forced track only covers foreign dialogue, and SDH
  * is cluttered with sound cues — neither makes a good translation input).
+ *
+ * `opts.preferHearingImpaired` inverts the SDH half, for a viewer who needs the
+ * sound cues: then SDH *is* the better translation input, because the cues
+ * carry through into the translated result.
  */
 export function pickSource(
   sources: SubtitleSourceMeta[],
-  preferredLangs: string[]
+  preferredLangs: string[],
+  opts: { preferHearingImpaired?: boolean } = {}
 ): SubtitleSourceMeta | undefined {
   if (sources.length === 0) return undefined;
   const preferred = preferredLangs.map((p) => normaliseLanguage(p) ?? p);
@@ -51,10 +56,12 @@ export function pickSource(
   return [...sources].sort((a, b) => {
     const byLang = langRank(a) - langRank(b);
     if (byLang !== 0) return byLang;
-    const forced = Number(a.forced) - Number(b.forced);
+    // `!!` for the same reason as pickTrack: these are optional, and NaN from
+    // `Number(undefined)` would swallow every tiebreak after it.
+    const forced = Number(!!a.forced) - Number(!!b.forced);
     if (forced !== 0) return forced;
-    const sdh = Number(a.hearingImpaired) - Number(b.hearingImpaired);
-    if (sdh !== 0) return sdh;
+    const sdh = Number(!!a.hearingImpaired) - Number(!!b.hearingImpaired);
+    if (sdh !== 0) return opts.preferHearingImpaired ? -sdh : sdh;
     return b.createdAt - a.createdAt;
   })[0];
 }
@@ -67,11 +74,12 @@ export async function findReusableSource(
   filename: string | undefined,
   preferredLangs: string[],
   uuid: string,
-  runtime?: { contentId: string; durationMs?: number }
+  runtime?: { contentId: string; durationMs?: number },
+  opts: { preferHearingImpaired?: boolean } = {}
 ): Promise<{ srt: string; meta: SubtitleSourceMeta } | undefined> {
   if (!filename) return undefined;
   const sources = await collectCandidateSources(filename, uuid, runtime);
-  const best = pickSource(sources, preferredLangs);
+  const best = pickSource(sources, preferredLangs, opts);
   if (!best) return undefined;
   const srt = await SubtitleSourceRepository.getSrt(best.id);
   if (!srt) return undefined;
@@ -87,11 +95,12 @@ export async function hasReusableSource(
   filename: string | undefined,
   preferredLangs: string[],
   uuid: string,
-  runtime?: { contentId: string; durationMs?: number }
+  runtime?: { contentId: string; durationMs?: number },
+  opts: { preferHearingImpaired?: boolean } = {}
 ): Promise<boolean> {
   if (!filename) return false;
   const sources = await collectCandidateSources(filename, uuid, runtime);
-  return !!pickSource(sources, preferredLangs);
+  return !!pickSource(sources, preferredLangs, opts);
 }
 
 /**
