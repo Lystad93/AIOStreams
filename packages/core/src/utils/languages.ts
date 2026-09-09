@@ -37,6 +37,12 @@ const LANGUAGE_ALIAS_MAP: Record<string, string> = {
   may: 'msa',
   tib: 'bod',
   wel: 'cym',
+  // Not ISO 639-2 B/T pairs like the rest: Bokmal and Nynorsk are the
+  // individual languages under the `nor` macrolanguage. Amazon and HBO Max tag
+  // their Norwegian subtitle tracks `nob`, so without these the track is read
+  // as an unknown language and dropped.
+  nob: 'nor',
+  nno: 'nor',
 };
 
 /** Resolve a deprecated ISO 639-2 alias to its preferred form (lowercased). */
